@@ -1,15 +1,15 @@
 // this struct is probably overkill since it just has one field
-struct AInstruction {
+pub struct AInstruction {
     value: String,
 }
 
-struct CInstruction {
+pub struct CInstruction {
     comp: String,
     dest: Option<String>,
     jump: Option<String>,
 }
 
-enum HackInstruction {
+pub enum HackInstruction {
     AInstruction(AInstruction),
     CInstruction(CInstruction),
     Comment,
@@ -31,6 +31,10 @@ fn parse_line(line: &str) -> HackInstruction {
         
         HackInstruction::CInstruction(CInstruction { comp, dest, jump })
     }
+}
+
+pub fn parse_lines(lines: &[&str]) -> Vec<HackInstruction> {
+    lines.iter().map(|line| parse_line(line)).collect()
 }
 
 #[cfg(test)]
@@ -100,4 +104,12 @@ mod test {
             _ => panic!("should have parsed a C-instruction"),
         }
     }
+
+    #[test]
+    fn test_parse_lines() {
+        let lines = vec!["// Hello World", "A=A-D;JNZ", "@999"];
+        let result = parse_lines(&lines);
+        assert_eq!(result.len(), 3);
+    }
 }
+
