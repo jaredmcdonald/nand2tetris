@@ -1,14 +1,14 @@
 // this struct is probably overkill since it just has one field
 #[derive(Debug)]
 pub struct AInstruction {
-    value: String,
+    pub value: String,
 }
 
 #[derive(Debug)]
 pub struct CInstruction {
-    comp: String,
-    dest: Option<String>,
-    jump: Option<String>,
+    pub comp: String,
+    pub dest: Option<String>,
+    pub jump: Option<String>,
 }
 
 #[derive(Debug)]

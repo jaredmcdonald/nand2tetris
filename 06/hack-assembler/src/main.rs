@@ -5,7 +5,9 @@ use std::env::args;
 use std::fs::File;
 use std::process;
 use std::io::{BufReader, BufRead};
+
 use parse::parse_lines;
+use code::generate_line;
 
 fn main() {
     let mut lines = Vec::new();
@@ -28,5 +30,7 @@ fn main() {
     }
 
     let parsed = parse_lines(lines.as_slice());
-    println!("{:?}", parsed);
+    for line in parsed {
+        println!("{}", generate_line(line));
+    }
 }
