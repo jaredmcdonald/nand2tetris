@@ -1,5 +1,6 @@
 mod parse;
 mod code;
+mod symbols;
 
 use std::env::args;
 use std::fs::File;
