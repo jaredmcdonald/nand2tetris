@@ -1,4 +1,5 @@
 mod parse;
+mod code;
 
 use std::env::args;
 use std::fs::File;
