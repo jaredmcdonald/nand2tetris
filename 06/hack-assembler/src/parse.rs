@@ -5,8 +5,8 @@ struct AInstruction {
 
 struct CInstruction {
     comp: String,
-    dest: String,
-    jump: String,
+    dest: Option<String>,
+    jump: Option<String>,
 }
 
 enum HackInstruction {
@@ -22,11 +22,14 @@ fn parse_line(line: &str) -> HackInstruction {
     } else if as_bytes[0] == 64 { // '@', A-instruction
         HackInstruction::AInstruction(AInstruction { value: line[1..].to_string() })
     } else {
-        HackInstruction::CInstruction(CInstruction {
-            comp: "".to_string(),
-            dest: "".to_string(),
-            jump: "".to_string(),
-        })
+        let split_at_eq = line.split("=").collect::<Vec<&str>>();
+        let eq_len = split_at_eq.len();
+        let dest = if eq_len == 1 { None } else { Some(split_at_eq[0].to_string()) }; 
+        let split_at_semi = split_at_eq[eq_len - 1].split(";").collect::<Vec<&str>>();
+        let jump = if split_at_semi.len() == 1 { None } else { Some(split_at_semi[1].to_string()) };
+        let comp = split_at_semi[0].to_string();
+        
+        HackInstruction::CInstruction(CInstruction { comp, dest, jump })
     }
 }
 
@@ -47,6 +50,54 @@ mod test {
         match parse_line("// this is a comment") {
             HackInstruction::Comment => assert!(true),
             _ => panic!("should have parsed a comment"),
+        }
+    }
+
+    #[test]
+    fn test_simple_c_instruction() {
+        match parse_line("0") {
+            HackInstruction::CInstruction(instruction) => {
+                assert_eq!(instruction.comp, "0");
+                assert_eq!(instruction.dest, None);
+                assert_eq!(instruction.jump, None);
+            },
+            _ => panic!("should have parsed a C-instruction"),
+        }
+    }
+
+    #[test]
+    fn test_c_instruction_jmp() {
+        match parse_line("D-M;JMP") {
+            HackInstruction::CInstruction(instruction) => {
+                assert_eq!(instruction.comp, "D-M");
+                assert_eq!(instruction.dest, None);
+                assert_eq!(instruction.jump.unwrap(), "JMP");
+            },
+            _ => panic!("should have parsed a C-instruction"),
+        }
+    }
+
+    #[test]
+    fn test_complex_c_instruction() {
+        match parse_line("D=D-M;JNZ") {
+            HackInstruction::CInstruction(instruction) => {
+                assert_eq!(instruction.comp, "D-M");
+                assert_eq!(instruction.dest.unwrap(), "D");
+                assert_eq!(instruction.jump.unwrap(), "JNZ");
+            },
+            _ => panic!("should have parsed a C-instruction"),
+        }
+    }
+
+    #[test]
+    fn test_c_instruction_without_jump() {
+        match parse_line("D=D-M") {
+            HackInstruction::CInstruction(instruction) => {
+                assert_eq!(instruction.comp, "D-M");
+                assert_eq!(instruction.dest.unwrap(), "D");
+                assert_eq!(instruction.jump, None);
+            },
+            _ => panic!("should have parsed a C-instruction"),
         }
     }
 }
