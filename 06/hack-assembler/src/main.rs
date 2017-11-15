@@ -8,7 +8,7 @@ use std::process;
 use std::io::{BufReader, BufRead};
 
 use parse::parse_lines;
-use code::generate_line;
+use code::generate;
 
 fn main() {
     let mut lines = Vec::new();
@@ -31,7 +31,8 @@ fn main() {
     }
 
     let parsed = parse_lines(lines.as_slice());
-    for line in parsed {
-        println!("{}", generate_line(line));
+    let generated = generate(parsed);
+    for line in generated {
+        println!("{}", line);
     }
 }

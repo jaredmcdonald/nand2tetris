@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
+#[derive(Clone)]
 pub struct SymbolTable {
     table: HashMap<String, u16>,
     current: u16,
@@ -86,6 +87,18 @@ mod test {
         let mut t = SymbolTable::new();
         if let Err(_) = t.set("BLARGH", 0xa) {
             panic!("setting a new label should succeed");
+        };
+        assert_eq!(t.get_else_set("BLARGH"), 0xa);
+    }
+
+    #[test]
+    fn test_set_occupied() {
+        let mut t = SymbolTable::new();
+        if let Err(_) = t.set("BLARGH", 0xa) {
+            panic!("setting a new label should succeed");
+        };
+        if let Ok(_) = t.set("BLARGH", 0xb) {
+            panic!("setting an existing label should fail");
         };
         assert_eq!(t.get_else_set("BLARGH"), 0xa);
     }

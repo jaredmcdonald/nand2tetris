@@ -1,16 +1,45 @@
-use parse::{HackInstruction, AInstruction, CInstruction};
+use parse::{LabeledLine, HackInstruction, AInstruction, CInstruction};
+use symbols::SymbolTable;
 
-pub fn generate_line(instruction: HackInstruction) -> String {
+pub fn generate(lines: Vec<LabeledLine>) -> Vec<String> {
+    let mut symbol_table = SymbolTable::new();
+
+    // first pass: add labels to the symbol table
+    for (line_number, line) in lines.iter().enumerate() {
+        if let Some(ref label) = line.label {
+            symbol_table.set(&label.name, line_number as u16);
+        }
+    }
+
+    // 2nd pass: do the rest
+    lines.iter().map(|line| {
+        // generate instruction
+        generate_instruction(
+            // rewrite the A-instructions that have symbols in them
+            if let HackInstruction::AInstruction(ref instruction) = line.instruction {
+                if let Err(_) = instruction.value.parse::<u16>() {
+                    // symbol alert, replace it
+                    let value = symbol_table.get_else_set(&instruction.value);
+                    HackInstruction::AInstruction(AInstruction { value: format!("{}", value) }) // coerce it back to a string, ugh
+                } else {
+                    HackInstruction::AInstruction(instruction.clone())
+                }
+            } else {
+                line.instruction.clone()
+            }
+        )
+    }).collect()
+}
+
+fn generate_instruction(instruction: HackInstruction) -> String {
     match instruction {
         HackInstruction::AInstruction(i) => a_instruction(i),
         HackInstruction::CInstruction(i) => c_instruction(i),
     }
 }
 
-// TODO deal with errors
 fn a_instruction(instruction: AInstruction) -> String {
-    let value: u16 = instruction.value.parse().unwrap();
-    format!("0{:015b}", value)
+    format!("0{:015b}", instruction.value.parse::<u16>().unwrap())
 }
 
 fn c_instruction(instruction: CInstruction) -> String {
@@ -184,5 +213,26 @@ mod test {
             jump: None,
         };
         assert_eq!(c_instruction(instruction), "1110000010010000");
+    }
+
+    #[test]
+    fn test_generate() {
+        let lines = vec![
+            // infinite loop program
+            LabeledLine {
+                label: Some(Label { name: "LOOP".to_string() }),
+                instruction: HackInstruction::AInstruction(AInstruction { value: "LOOP".to_string() }),
+            },
+            LabeledLine {
+                label: None,
+                instruction: HackInstruction::CInstruction(CInstruction {
+                    comp: "0".to_string(),
+                    dest: None,
+                    jump: Some("JMP".to_string())
+                })
+            }
+        ];
+        let result = generate(lines);
+        assert_eq!(result.len(), 2);
     }
 }
