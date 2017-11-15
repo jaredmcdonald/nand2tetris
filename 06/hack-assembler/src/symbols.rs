@@ -36,20 +36,57 @@ impl SymbolTable {
     }
 
     // for setting labels on first pass
-    pub fn set(&mut self, label: &str, addr: u16) {
-        self.table.insert(label.to_string(), addr);
+    pub fn set(&mut self, label: &str, addr: u16) -> Result<u16, &str> {
+        if let Entry::Vacant(entry) = self.table.entry(label.to_string()) {
+            entry.insert(addr);
+            Ok(addr)
+        } else {
+            Err("occupied")
+        }
     }
 
-    // useful for nonlabel symbols
+    // for nonlabel symbols
     pub fn get_else_set(&mut self, label: &str) -> u16 {
         let addr = match self.table.entry(label.to_string()) {
-            Entry::Occupied(entry) => entry.get() * 1,
+            Entry::Occupied(entry) => entry.get() * 1, // todo: how to get rid of borrowing issue without this hack?
             Entry::Vacant(entry) => {
-                entry.insert(self.current);
-                self.current
+                let current = self.current;
+                entry.insert(current);
+                self.current += 1;
+                current
             },
         };
-        self.current += 1;
         addr
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_constructor() {
+        let mut t = SymbolTable::new();
+        assert_eq!(t.get_else_set("SP"), 0);
+        assert_eq!(t.get_else_set("SCREEN"), 0x4000);
+        assert_eq!(t.get_else_set("R5"), 0x5);
+    }
+
+    #[test]
+    fn test_get_else_set() {
+        let mut t = SymbolTable::new();
+        assert_eq!(t.get_else_set("blargh"), 0x10);
+        assert_eq!(t.get_else_set("blargh"), 0x10);
+        assert_eq!(t.get_else_set("blargh1"), 0x11);
+        assert_eq!(t.get_else_set("blargh2"), 0x12);
+    }
+
+    #[test]
+    fn test_set() {
+        let mut t = SymbolTable::new();
+        if let Err(_) = t.set("BLARGH", 0xa) {
+            panic!("setting a new label should succeed");
+        };
+        assert_eq!(t.get_else_set("BLARGH"), 0xa);
     }
 }
