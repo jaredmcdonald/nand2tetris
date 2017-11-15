@@ -14,10 +14,10 @@ pub struct CInstruction {
 #[derive(Debug)]
 pub struct LabeledLine {
     pub instruction: HackInstruction,
-    pub label: Option<Label>,
+    pub labels: Vec<Label>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Label {
     pub name: String,
 }
@@ -61,6 +61,7 @@ fn parse_line(line: &str) -> Option<HackLine> {
 pub fn parse_lines(lines: &[String]) -> Vec<LabeledLine> {
     let mut parsed = lines.iter().filter_map(|line| parse_line(&line));
     let mut with_labels = Vec::new();
+    let mut labels_stack = Vec::new();
     loop {
         let current = parsed.next();
         match current {
@@ -68,25 +69,27 @@ pub fn parse_lines(lines: &[String]) -> Vec<LabeledLine> {
             // i basically just want to keep the HackLine type internal to the parser,
             // and have the external representation be LabeledLine, with the A/C instruction types
             Some(HackLine::Label(label)) => {
-                let instruction = parsed.next().unwrap();
-                with_labels.push(LabeledLine {
-                    label: Some(label),
-                    instruction: match instruction {
-                        HackLine::AInstruction(i) => HackInstruction::AInstruction(i),
-                        HackLine::CInstruction(i) => HackInstruction::CInstruction(i),
-                        _ => panic!("y u got 2 labels in a row???"), // is this valid? maybe
-                    },
-                });
+                labels_stack.push(label);
+                // let instruction = parsed.next().unwrap();
+                // with_labels.push(LabeledLine {
+                //     label: Some(label),
+                //     instruction: match instruction {
+                //         HackLine::AInstruction(i) => HackInstruction::AInstruction(i),
+                //         HackLine::CInstruction(i) => HackInstruction::CInstruction(i),
+                //         _ => panic!("y u got 2 labels in a row???"), // is this valid? maybe
+                //     },
+                // });
             },
             Some(line) => {
                 with_labels.push(LabeledLine {
-                    label: None,
+                    labels: labels_stack.clone(),
                     instruction: match line {
                         HackLine::AInstruction(i) => HackInstruction::AInstruction(i),
                         HackLine::CInstruction(i) => HackInstruction::CInstruction(i),
                         _ => panic!("this won't happen because we've already tested for label in the surrounding match (famous last words)"),
                     }
-                })
+                });
+                labels_stack = Vec::new(); // reset the label accumulator
             },
             None => break,
         }
@@ -207,10 +210,8 @@ mod test {
         let result = parse_lines(lines.as_slice());
         assert_eq!(result.len(), 1);
         let line = &result[0];
-        match line.label {
-            Some(ref label) => assert_eq!(label.name, "BLARGH"),
-            _ => panic!("should have labeled the line"),
-        }
+        assert_eq!(line.labels.len(), 1);
+        assert_eq!(line.labels[0].name, "BLARGH");
         match line.instruction {
             HackInstruction::CInstruction(_) => assert!(true),
             _ => panic!("should be a C-instruction"),

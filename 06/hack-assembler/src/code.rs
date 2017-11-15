@@ -1,4 +1,4 @@
-use parse::{LabeledLine, HackInstruction, AInstruction, CInstruction};
+use parse::{LabeledLine, Label, HackInstruction, AInstruction, CInstruction};
 use symbols::SymbolTable;
 
 pub fn generate(lines: Vec<LabeledLine>) -> Vec<String> {
@@ -6,8 +6,10 @@ pub fn generate(lines: Vec<LabeledLine>) -> Vec<String> {
 
     // first pass: add labels to the symbol table
     for (line_number, line) in lines.iter().enumerate() {
-        if let Some(ref label) = line.label {
-            symbol_table.set(&label.name, line_number as u16);
+        for label in &line.labels {
+            if let Err(_) = symbol_table.set(&label.name, line_number as u16) {
+                panic!("duplicate label! exiting");
+            }
         }
     }
 
@@ -220,11 +222,11 @@ mod test {
         let lines = vec![
             // infinite loop program
             LabeledLine {
-                label: Some(Label { name: "LOOP".to_string() }),
+                labels: vec![Label { name: "LOOP".to_string() }, Label { name: "UNUSED".to_string() }],
                 instruction: HackInstruction::AInstruction(AInstruction { value: "LOOP".to_string() }),
             },
             LabeledLine {
-                label: None,
+                labels: Vec::new(),
                 instruction: HackInstruction::CInstruction(CInstruction {
                     comp: "0".to_string(),
                     dest: None,
