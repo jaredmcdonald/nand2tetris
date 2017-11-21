@@ -1,5 +1,13 @@
-use parse::{Instruction, Push, Pop, MemorySegment};
+use parse::{Instruction, Push, Pop, Comparison, Binary, Unary, MemorySegment};
 use rand::random;
+
+// convenience enum, because the binary/unary generation code looks a lot alike (but we still should
+// be able to distinguish between them - hence not collapsing them at the parse::Instruction level)
+#[derive(Debug, PartialEq)]
+enum BinaryOrUnary {
+    Binary(Binary),
+    Unary(Unary),
+}
 
 // pop the stack to D register
 fn pop_to_d() -> Vec<String> {
@@ -11,6 +19,7 @@ fn pop_to_d() -> Vec<String> {
     ]
 }
 
+// push to the stack from the D register
 fn push_from_d() -> Vec<String> {
     vec![
         "@SP".to_string(),   // load stack pointer
@@ -21,14 +30,16 @@ fn push_from_d() -> Vec<String> {
     ]
 }
 
-fn generate_comparison_operation(instruction: Instruction) -> Vec<String> {
+// generate assembly for a comparison operation (eq, gt, lt)
+fn generate_comparison_operation(comparison: &Comparison) -> Vec<String> {
     let number_for_label = random::<u64>(); // lol, is this a good idea? maybe a global counter instead?
 
-    let jump_directive = match instruction {
-        Instruction::Gt => "JLT", // Lt/Gt use the opposite jump instruction because their arguments
-        Instruction::Lt => "JGT", // come off the stack in the "reverse" order; i.e., 6 < 7 will evaluate
-        Instruction::Eq => "JEQ", // 7 - 6 and then use the result's relation to zero
-        _ => panic!("not a comparison operation: {:?}", instruction),
+    // Lt/Gt use the opposite jump instruction because their arguments come off the stack in the
+    // "reverse" order; i.e., 6 < 7 will evaluate 7 - 6 and then use the result's relation to zero
+    let jump_directive = match comparison {
+        &Comparison::Gt => "JLT",
+        &Comparison::Lt => "JGT",
+        &Comparison::Eq => "JEQ",
     };
 
     let true_branch_label = format!("true.{:x}", number_for_label);
@@ -53,16 +64,21 @@ fn generate_comparison_operation(instruction: Instruction) -> Vec<String> {
     asm
 }
 
-// bad name for this function, todo rename
-fn generate_operation(instruction: Instruction) -> Vec<String> {
-    let (operator, is_binary) = match instruction {
-        Instruction::Add => ("+", true),
-        Instruction::Sub => ("-", true),
-        Instruction::And => ("&", true),
-        Instruction::Or =>  ("|", true),
-        Instruction::Not => ("!", false),
-        Instruction::Neg => ("-", false),
-        _ => panic!("don't know how to deal with this operation: {:?}"),
+// generate assembly for a binary or unary operation (bitwise ALU ops)
+fn generate_binary_or_unary(instruction: &BinaryOrUnary) -> Vec<String> {
+    // there must be a more concise way to do this
+    let is_binary = match instruction {
+        &BinaryOrUnary::Binary(_) => true,
+        &BinaryOrUnary::Unary(_) => false,
+    };
+
+    let operator = match instruction {
+        &BinaryOrUnary::Binary(Binary::Add) => "+",
+        &BinaryOrUnary::Binary(Binary::Sub) => "-",
+        &BinaryOrUnary::Binary(Binary::And) => "&",
+        &BinaryOrUnary::Binary(Binary::Or) =>  "|",
+        &BinaryOrUnary::Unary(Unary::Not) => "!",
+        &BinaryOrUnary::Unary(Unary::Neg) => "-",
     };
     let operand = if is_binary { "D" } else { "" };
     let mut asm = if is_binary {     // if a binary operation,
@@ -77,13 +93,15 @@ fn generate_operation(instruction: Instruction) -> Vec<String> {
         format!("D={}{}M", operand, operator), // perform operation
     ]);
     asm.extend(push_from_d());       // push the result (in D) to the stack
-    if instruction == Instruction::Sub {
+    if instruction == &BinaryOrUnary::Binary(Binary::Sub) {
         // for subtraction, operands are "backwards", so we need to negate the result
-        asm.extend(generate_operation(Instruction::Neg));
+        asm.extend(generate_binary_or_unary(&BinaryOrUnary::Unary(Unary::Neg)));
     }
     asm
 }
 
+// given a memory segment and index (and filename, for static), generate assembly to put the
+// address in the A register
 fn get_address_in_a(segment: &MemorySegment, index: u16, filename: &str) -> Vec<String> {
     // temp and pointer are fixed (RAM 3 and 5, respectively),
     // so just load them into A directly
@@ -92,6 +110,7 @@ fn get_address_in_a(segment: &MemorySegment, index: u16, filename: &str) -> Vec<
     } else if segment == &MemorySegment::Temp {
         return vec![format!("@{}", 5 + index)];
     } else if segment == &MemorySegment::Static {
+        // statics are just symbols with the form Filename.index, e.g., MyStupidFile.12
         return vec![format!("@{}.{}", filename, index)];
     }
 
@@ -100,6 +119,8 @@ fn get_address_in_a(segment: &MemorySegment, index: u16, filename: &str) -> Vec<
         &MemorySegment::Argument => "ARG",
         &MemorySegment::This => "THIS",
         &MemorySegment::That => "THAT",
+        // this will never happen (ha) since we've already accounted for the other memory segments
+        // above, but the compiler doesn't know about that
         _ => panic!("unimplemented memory segment: {:?}", segment),
     };
     vec![
@@ -110,6 +131,7 @@ fn get_address_in_a(segment: &MemorySegment, index: u16, filename: &str) -> Vec<
     ]
 }
 
+// generate assembly for a push instruction
 fn generate_push(push: &Push, filename: &str) -> Vec<String> {
     let mut asm = if push.segment == MemorySegment::Constant {
         vec![
@@ -125,6 +147,7 @@ fn generate_push(push: &Push, filename: &str) -> Vec<String> {
     asm
 }
 
+// generate assembly for a pop instruction
 fn generate_pop(pop: &Pop, filename: &str) -> Vec<String> {
     let mut asm = get_address_in_a(&pop.segment, pop.index, filename); // load the target address to pop to into A
     asm.extend(
@@ -145,37 +168,37 @@ fn generate_pop(pop: &Pop, filename: &str) -> Vec<String> {
     asm
 }
 
+// delegates work for assembly-writing
 fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
     match instruction {
         // TODO: why `ref` below? the compiler told me to, but...
         &Instruction::Push(ref push) => generate_push(&push, filename),
         &Instruction::Pop(ref pop) => generate_pop(&pop, filename),
-        &Instruction::Add => generate_operation(Instruction::Add),
-        &Instruction::Sub => generate_operation(Instruction::Sub),
-        &Instruction::And => generate_operation(Instruction::And),
-        &Instruction::Or => generate_operation(Instruction::Or),
-        &Instruction::Not => generate_operation(Instruction::Not),
-        &Instruction::Neg => generate_operation(Instruction::Neg),
-        &Instruction::Gt => generate_comparison_operation(Instruction::Gt),
-        &Instruction::Lt => generate_comparison_operation(Instruction::Lt),
-        &Instruction::Eq => generate_comparison_operation(Instruction::Eq),
-        _ => vec![],
+        &Instruction::Binary(ref b) => generate_binary_or_unary(&BinaryOrUnary::Binary(*b)),
+        &Instruction::Unary(ref u) => generate_binary_or_unary(&BinaryOrUnary::Unary(*u)),
+        &Instruction::Comparison(ref c) => generate_comparison_operation(c),
     }
 }
 
-pub fn generate(instructions: &[Instruction], filename: &str) -> Vec<Vec<String>> {
-    instructions.iter().map(|l| generate_line(l, filename)).collect()
+// outer function that takes parsed Instructions and returns generated assembly
+pub fn generate(instructions: &[Instruction], filename: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    for instruction_set in instructions.iter().map(|l| generate_line(l, filename)) {
+        result.extend(instruction_set);
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // this is pretty useless, the integration tests supplied w/ the course are better
     #[test]
     fn test_generate_push() {
         let push = Push { segment: MemorySegment::Constant, index: 99 };
         assert_eq!(
-            generate_push(&push),
+            generate_push(&push, "foobar"),
             vec!["@99", "D=A", "@SP", "A=M", "M=D", "@SP", "M=M+1"]
         );
     }

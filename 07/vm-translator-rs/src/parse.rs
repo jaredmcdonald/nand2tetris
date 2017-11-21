@@ -1,17 +1,31 @@
 #[derive(Debug, PartialEq)]
-pub enum Instruction {
-    Push(Push),
-    Pop(Pop),
-    Add,
-    Sub,
-    Neg,
+pub enum Comparison {
     Eq,
     Gt,
     Lt,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum Unary {
+    Neg,
+    Not,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum Binary {
+    Add,
+    Sub,
     And,
     Or,
-    Not,
-    Unknown,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Instruction {
+    Push(Push),
+    Pop(Pop),
+    Comparison(Comparison),
+    Unary(Unary),
+    Binary(Binary),
 }
 
 #[derive(Debug, PartialEq)]
@@ -38,8 +52,22 @@ pub struct Pop {
     pub index: u16,
 }
 
+fn strip_comments_and_whitespace(line: &str) -> Option<String> {
+    let without_comment = line.split("//").collect::<Vec<&str>>(); // remove everything after '//'
+    let trimmed = without_comment[0].trim();
+    if trimmed.len() == 0 {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 pub fn parse(lines: &[String]) -> Vec<Instruction> {
-    lines.iter().map(|l| parse_line(l)).collect()
+    lines.iter().filter_map(|line| {
+        if let Some(l) = strip_comments_and_whitespace(line) {
+            Some(parse_line(&l))
+        } else { None }
+    }).collect()
 }
 
 fn to_memory_segment(name: &str) -> MemorySegment {
@@ -68,16 +96,16 @@ fn parse_line(line: &str) -> Instruction {
             segment: to_memory_segment(space_split[1]),
             index: space_split[2].parse::<u16>().unwrap(),
         }),
-        "add" => Instruction::Add,
-        "sub" => Instruction::Sub,
-        "neg" => Instruction::Neg,
-        "eq" => Instruction::Eq,
-        "gt" => Instruction::Gt,
-        "lt" => Instruction::Lt,
-        "and" => Instruction::And,
-        "or" => Instruction::Or,
-        "not" => Instruction::Not,
-        _ => Instruction::Unknown,
+        "eq" => Instruction::Comparison(Comparison::Eq),
+        "gt" => Instruction::Comparison(Comparison::Gt),
+        "lt" => Instruction::Comparison(Comparison::Lt),
+        "add" => Instruction::Binary(Binary::Add),
+        "sub" => Instruction::Binary(Binary::Sub),
+        "and" => Instruction::Binary(Binary::And),
+        "or" => Instruction::Binary(Binary::Or),
+        "neg" => Instruction::Unary(Unary::Neg),
+        "not" => Instruction::Unary(Unary::Not),
+        _ => panic!("unknown instruction in line: {}", line),
     }
 }
 
@@ -103,14 +131,20 @@ mod tests {
 
     #[test]
     fn test_parse_others() {
-        assert_eq!(parse_line("add"), Instruction::Add);
-        assert_eq!(parse_line("sub"), Instruction::Sub);
-        assert_eq!(parse_line("neg"), Instruction::Neg);
-        assert_eq!(parse_line("eq"), Instruction::Eq);
-        assert_eq!(parse_line("gt"), Instruction::Gt);
-        assert_eq!(parse_line("lt"), Instruction::Lt);
-        assert_eq!(parse_line("and"), Instruction::And);
-        assert_eq!(parse_line("or"), Instruction::Or);
-        assert_eq!(parse_line("not"), Instruction::Not);
+        assert_eq!(parse_line("add"), Instruction::Binary(Binary::Add));
+        assert_eq!(parse_line("sub"), Instruction::Binary(Binary::Sub));
+        assert_eq!(parse_line("and"), Instruction::Binary(Binary::And));
+        assert_eq!(parse_line("or"), Instruction::Binary(Binary::Or));
+        assert_eq!(parse_line("neg"), Instruction::Unary(Unary::Neg));
+        assert_eq!(parse_line("not"), Instruction::Unary(Unary::Not));
+        assert_eq!(parse_line("eq"), Instruction::Comparison(Comparison::Eq));
+        assert_eq!(parse_line("gt"), Instruction::Comparison(Comparison::Gt));
+        assert_eq!(parse_line("lt"), Instruction::Comparison(Comparison::Lt));
+    }
+
+    #[test]
+    fn test_parse_comments_whitespace() {
+        let test_lines = vec!["// Hello".to_string(), " push constant 12 // Hi".to_string(), " ".to_string()];
+        assert_eq!(parse(test_lines.as_slice()).len(), 1);
     }
 }

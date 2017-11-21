@@ -25,10 +25,9 @@ fn main() {
                 let name = Path::new(&filename).file_stem().unwrap().to_str().unwrap();
                 let parsed = parse(lines.as_slice());
                 let generated = generate(parsed.as_slice(), name);
-                for sublist in generated {
-                    for instruction in sublist {
-                        println!("{}", instruction);
-                    }
+                for instruction in generated {
+                    // stdout
+                    println!("{}", instruction);
                 }
             },
             Err(e) => {
