@@ -1,4 +1,4 @@
-use parse::{Instruction, Push, Pop, Comparison, Binary, Unary, MemorySegment};
+use parse::{Instruction, MemoryLocation, Comparison, Binary, Unary, MemorySegment};
 use rand::random;
 
 // convenience enum, because the binary/unary generation code looks a lot alike (but we still should
@@ -102,29 +102,29 @@ fn generate_binary_or_unary(instruction: &BinaryOrUnary) -> Vec<String> {
 
 // given a memory segment and index (and filename, for static), generate assembly to put the
 // address in the A register
-fn get_address_in_a(segment: &MemorySegment, index: u16, filename: &str) -> Vec<String> {
+fn get_address_in_a(location: &MemoryLocation, filename: &str) -> Vec<String> {
     // temp and pointer are fixed (RAM 3 and 5, respectively),
     // so just load them into A directly
-    if segment == &MemorySegment::Pointer {
-        return vec![format!("@{}", 3 + index)];
-    } else if segment == &MemorySegment::Temp {
-        return vec![format!("@{}", 5 + index)];
-    } else if segment == &MemorySegment::Static {
+    if location.segment == MemorySegment::Pointer {
+        return vec![format!("@{}", 3 + location.index)];
+    } else if location.segment == MemorySegment::Temp {
+        return vec![format!("@{}", 5 + location.index)];
+    } else if location.segment == MemorySegment::Static {
         // statics are just symbols with the form Filename.index, e.g., MyStupidFile.12
-        return vec![format!("@{}.{}", filename, index)];
+        return vec![format!("@{}.{}", filename, location.index)];
     }
 
-    let asm_base_symbol = match segment {
-        &MemorySegment::Local => "LCL",
-        &MemorySegment::Argument => "ARG",
-        &MemorySegment::This => "THIS",
-        &MemorySegment::That => "THAT",
+    let asm_base_symbol = match location.segment {
+        MemorySegment::Local => "LCL",
+        MemorySegment::Argument => "ARG",
+        MemorySegment::This => "THIS",
+        MemorySegment::That => "THAT",
         // this will never happen (ha) since we've already accounted for the other memory segments
         // above, but the compiler doesn't know about that
-        _ => panic!("unimplemented memory segment: {:?}", segment),
+        _ => panic!("unimplemented memory segment: {:?}", location.segment),
     };
     vec![
-        format!("@{}", index), // put the offset (index) into A
+        format!("@{}", location.index), // put the offset (index) into A
         "D=A".to_string(),     // move it to D
         format!("@{}", asm_base_symbol), // load the symbol into A
         "A=M+D".to_string(),   // dereference and add the offset (in D)
@@ -132,14 +132,14 @@ fn get_address_in_a(segment: &MemorySegment, index: u16, filename: &str) -> Vec<
 }
 
 // generate assembly for a push instruction
-fn generate_push(push: &Push, filename: &str) -> Vec<String> {
+fn generate_push(push: &MemoryLocation, filename: &str) -> Vec<String> {
     let mut asm = if push.segment == MemorySegment::Constant {
         vec![
             format!("@{}", push.index), // load the constant into A
             "D=A".to_string(),          // save it in D
         ]
     } else {
-        let mut got_address = get_address_in_a(&push.segment, push.index, filename); // get the address of the memory segment in A
+        let mut got_address = get_address_in_a(&push, filename); // get the address of the memory segment in A
         got_address.push("D=M".to_string()); // move it to the D register
         got_address
     };
@@ -148,8 +148,8 @@ fn generate_push(push: &Push, filename: &str) -> Vec<String> {
 }
 
 // generate assembly for a pop instruction
-fn generate_pop(pop: &Pop, filename: &str) -> Vec<String> {
-    let mut asm = get_address_in_a(&pop.segment, pop.index, filename); // load the target address to pop to into A
+fn generate_pop(pop: &MemoryLocation, filename: &str) -> Vec<String> {
+    let mut asm = get_address_in_a(pop, filename); // load the target address to pop to into A
     asm.extend(
         vec![
             "D=A".to_string(),  // move address into D
@@ -196,7 +196,7 @@ mod tests {
     // this is pretty useless, the integration tests supplied w/ the course are better
     #[test]
     fn test_generate_push() {
-        let push = Push { segment: MemorySegment::Constant, index: 99 };
+        let push = MemoryLocation { segment: MemorySegment::Constant, index: 99 };
         assert_eq!(
             generate_push(&push, "foobar"),
             vec!["@99", "D=A", "@SP", "A=M", "M=D", "@SP", "M=M+1"]

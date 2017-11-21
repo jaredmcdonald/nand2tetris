@@ -21,8 +21,8 @@ pub enum Binary {
 
 #[derive(Debug, PartialEq)]
 pub enum Instruction {
-    Push(Push),
-    Pop(Pop),
+    Push(MemoryLocation),
+    Pop(MemoryLocation),
     Comparison(Comparison),
     Unary(Unary),
     Binary(Binary),
@@ -41,13 +41,7 @@ pub enum MemorySegment {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Push {
-    pub segment: MemorySegment,
-    pub index: u16,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Pop {
+pub struct MemoryLocation {
     pub segment: MemorySegment,
     pub index: u16,
 }
@@ -88,11 +82,11 @@ fn to_memory_segment(name: &str) -> MemorySegment {
 fn parse_line(line: &str) -> Instruction {
     let space_split = line.split(" ").collect::<Vec<&str>>();
     match space_split[0] {
-        "push" => Instruction::Push(Push {
+        "push" => Instruction::Push(MemoryLocation {
             segment: to_memory_segment(space_split[1]),
             index: space_split[2].parse::<u16>().unwrap(),
         }),
-        "pop" => Instruction::Pop(Pop {
+        "pop" => Instruction::Pop(MemoryLocation {
             segment: to_memory_segment(space_split[1]),
             index: space_split[2].parse::<u16>().unwrap(),
         }),
@@ -117,7 +111,15 @@ mod tests {
     fn test_parse_push() {
         assert_eq!(
             parse_line("push constant 15"),
-            Instruction::Push(Push { segment: MemorySegment::Constant, index: 15 })
+            Instruction::Push(MemoryLocation { segment: MemorySegment::Constant, index: 15 })
+        );
+    }
+
+    #[test]
+    fn test_parse_pop() {
+        assert_eq!(
+            parse_line("pop static 15"),
+            Instruction::Pop(MemoryLocation { segment: MemorySegment::Static, index: 15 })
         );
     }
 
@@ -125,7 +127,7 @@ mod tests {
     fn test_parse_push_non_constant() {
         assert_eq!(
             parse_line("push local 10"),
-            Instruction::Push(Push { segment: MemorySegment::Local, index: 10 })
+            Instruction::Push(MemoryLocation { segment: MemorySegment::Local, index: 10 })
         );
     }
 
