@@ -23,7 +23,7 @@ pub enum MemorySegment {
     That,
     Pointer,
     Temp,
-    Unknown,
+    Static,
 }
 
 #[derive(Debug, PartialEq)]
@@ -51,7 +51,8 @@ fn to_memory_segment(name: &str) -> MemorySegment {
         "that" => MemorySegment::That,
         "pointer" => MemorySegment::Pointer,
         "temp" => MemorySegment::Temp,
-        _ => MemorySegment::Unknown,
+        "static" => MemorySegment::Static,
+        _ => panic!("unrecognized memory segment: {}", name),
     }
 }
 

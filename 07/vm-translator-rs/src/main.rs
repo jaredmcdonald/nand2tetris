@@ -6,6 +6,7 @@ mod code_gen;
 use parse::parse;
 use code_gen::generate;
 
+use std::path::Path;
 use std::env::args;
 use std::fs::File;
 use std::process;
@@ -20,6 +21,15 @@ fn main() {
                 for line in file.lines() {
                     lines.push(line.unwrap());
                 }
+                // haha, ugh 👇
+                let name = Path::new(&filename).file_stem().unwrap().to_str().unwrap();
+                let parsed = parse(lines.as_slice());
+                let generated = generate(parsed.as_slice(), name);
+                for sublist in generated {
+                    for instruction in sublist {
+                        println!("{}", instruction);
+                    }
+                }
             },
             Err(e) => {
                 println!("Error opening file {}: {:?}", filename, e);
@@ -29,13 +39,5 @@ fn main() {
     } else {
         println!("must specify a filename as the first argument");
         process::exit(1);
-    }
-
-    let parsed = parse(lines.as_slice());
-    let generated = generate(parsed.as_slice());
-    for sublist in generated {
-        for instruction in sublist {
-            println!("{}", instruction);
-        }
     }
 }

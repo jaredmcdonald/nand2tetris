@@ -84,13 +84,15 @@ fn generate_operation(instruction: Instruction) -> Vec<String> {
     asm
 }
 
-fn get_address_in_a(segment: &MemorySegment, index: u16) -> Vec<String> {
+fn get_address_in_a(segment: &MemorySegment, index: u16, filename: &str) -> Vec<String> {
     // temp and pointer are fixed (RAM 3 and 5, respectively),
     // so just load them into A directly
     if segment == &MemorySegment::Pointer {
         return vec![format!("@{}", 3 + index)];
     } else if segment == &MemorySegment::Temp {
         return vec![format!("@{}", 5 + index)];
+    } else if segment == &MemorySegment::Static {
+        return vec![format!("@{}.{}", filename, index)];
     }
 
     let asm_base_symbol = match segment {
@@ -98,7 +100,7 @@ fn get_address_in_a(segment: &MemorySegment, index: u16) -> Vec<String> {
         &MemorySegment::Argument => "ARG",
         &MemorySegment::This => "THIS",
         &MemorySegment::That => "THAT",
-        _ => panic!("unrecognized/unimplemented memory segment"), // this should probably happen at parse time
+        _ => panic!("unimplemented memory segment: {:?}", segment),
     };
     vec![
         format!("@{}", index), // put the offset (index) into A
@@ -108,14 +110,14 @@ fn get_address_in_a(segment: &MemorySegment, index: u16) -> Vec<String> {
     ]
 }
 
-fn generate_push(push: &Push) -> Vec<String> {
+fn generate_push(push: &Push, filename: &str) -> Vec<String> {
     let mut asm = if push.segment == MemorySegment::Constant {
         vec![
             format!("@{}", push.index), // load the constant into A
             "D=A".to_string(),          // save it in D
         ]
     } else {
-        let mut got_address = get_address_in_a(&push.segment, push.index); // get the address of the memory segment in A
+        let mut got_address = get_address_in_a(&push.segment, push.index, filename); // get the address of the memory segment in A
         got_address.push("D=M".to_string()); // move it to the D register
         got_address
     };
@@ -123,8 +125,8 @@ fn generate_push(push: &Push) -> Vec<String> {
     asm
 }
 
-fn generate_pop(pop: &Pop) -> Vec<String> {
-    let mut asm = get_address_in_a(&pop.segment, pop.index); // load the target address to pop to into A
+fn generate_pop(pop: &Pop, filename: &str) -> Vec<String> {
+    let mut asm = get_address_in_a(&pop.segment, pop.index, filename); // load the target address to pop to into A
     asm.extend(
         vec![
             "D=A".to_string(),  // move address into D
@@ -143,10 +145,11 @@ fn generate_pop(pop: &Pop) -> Vec<String> {
     asm
 }
 
-fn generate_line(instruction: &Instruction) -> Vec<String> {
+fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
     match instruction {
-        &Instruction::Push(ref push) => generate_push(&push), // TODO: why `ref`? the compiler told me to, but...
-        &Instruction::Pop(ref pop) => generate_pop(&pop),
+        // TODO: why `ref` below? the compiler told me to, but...
+        &Instruction::Push(ref push) => generate_push(&push, filename),
+        &Instruction::Pop(ref pop) => generate_pop(&pop, filename),
         &Instruction::Add => generate_operation(Instruction::Add),
         &Instruction::Sub => generate_operation(Instruction::Sub),
         &Instruction::And => generate_operation(Instruction::And),
@@ -160,8 +163,8 @@ fn generate_line(instruction: &Instruction) -> Vec<String> {
     }
 }
 
-pub fn generate(instructions: &[Instruction]) -> Vec<Vec<String>> {
-    instructions.iter().map(|l| generate_line(l)).collect()
+pub fn generate(instructions: &[Instruction], filename: &str) -> Vec<Vec<String>> {
+    instructions.iter().map(|l| generate_line(l, filename)).collect()
 }
 
 #[cfg(test)]
