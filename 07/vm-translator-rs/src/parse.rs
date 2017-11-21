@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq)]
-enum Instruction {
+pub enum Instruction {
     Push(Push),
     Add,
     Sub,
@@ -14,15 +14,19 @@ enum Instruction {
 }
 
 #[derive(Debug, PartialEq)]
-enum MemorySegment {
+pub enum MemorySegment {
     Constant,
     Unknown,
 }
 
 #[derive(Debug, PartialEq)]
-struct Push {
-    segment: MemorySegment,
-    index: u16,
+pub struct Push {
+    pub segment: MemorySegment,
+    pub index: u16,
+}
+
+pub fn parse(lines: &[String]) -> Vec<Instruction> {
+    lines.iter().map(|l| parse_line(l)).collect()
 }
 
 // assumes the line has already been stripped of whitespace and comments
