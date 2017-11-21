@@ -1,4 +1,4 @@
-use parse::{Instruction, Push};
+use parse::{Instruction, Push, Pop, MemorySegment};
 use rand::random;
 
 // pop the stack to D register
@@ -84,19 +84,69 @@ fn generate_operation(instruction: Instruction) -> Vec<String> {
     asm
 }
 
+fn get_address_in_a(segment: &MemorySegment, index: u16) -> Vec<String> {
+    // temp and pointer are fixed (RAM 3 and 5, respectively),
+    // so just load them into A directly
+    if segment == &MemorySegment::Pointer {
+        return vec![format!("@{}", 3 + index)];
+    } else if segment == &MemorySegment::Temp {
+        return vec![format!("@{}", 5 + index)];
+    }
+
+    let asm_base_symbol = match segment {
+        &MemorySegment::Local => "LCL",
+        &MemorySegment::Argument => "ARG",
+        &MemorySegment::This => "THIS",
+        &MemorySegment::That => "THAT",
+        _ => panic!("unrecognized/unimplemented memory segment"), // this should probably happen at parse time
+    };
+    vec![
+        format!("@{}", index), // put the offset (index) into A
+        "D=A".to_string(),     // move it to D
+        format!("@{}", asm_base_symbol), // load the symbol into A
+        "A=M+D".to_string(),   // dereference and add the offset (in D)
+    ]
+}
+
 fn generate_push(push: &Push) -> Vec<String> {
-    // for now ignore memory segment, we know it's `constant`
-    let mut asm = vec![
-        format!("@{}", push.index), // load the constant into A
-        "D=A".to_string(),          // save it in D
-    ];
-    asm.extend(push_from_d());      // push what's in D to stack
+    let mut asm = if push.segment == MemorySegment::Constant {
+        vec![
+            format!("@{}", push.index), // load the constant into A
+            "D=A".to_string(),          // save it in D
+        ]
+    } else {
+        let mut got_address = get_address_in_a(&push.segment, push.index); // get the address of the memory segment in A
+        got_address.push("D=M".to_string()); // move it to the D register
+        got_address
+    };
+    asm.extend(push_from_d()); // push what's in D to the stack
+    asm
+}
+
+fn generate_pop(pop: &Pop) -> Vec<String> {
+    let mut asm = get_address_in_a(&pop.segment, pop.index); // load the target address to pop to into A
+    asm.extend(
+        vec![
+            "D=A".to_string(),  // move address into D
+            "@R13".to_string(), // load up R13 address into A
+            "M=D".to_string(),  // store address in R13 because our computer sucks and doesn't have enough registers
+        ]
+    );
+    asm.extend(pop_to_d()); // pop the stack into the D register
+    asm.extend(
+        vec![
+            "@R13".to_string(), // get R13 in A register
+            "A=M".to_string(),  // dereference (this is where we put the target address, above)
+            "M=D".to_string(),  // save to memory
+        ]
+    );
     asm
 }
 
 fn generate_line(instruction: &Instruction) -> Vec<String> {
     match instruction {
-        &Instruction::Push(ref p) => generate_push(&p), // TODO: why `ref`? the compiler told me to, but...
+        &Instruction::Push(ref push) => generate_push(&push), // TODO: why `ref`? the compiler told me to, but...
+        &Instruction::Pop(ref pop) => generate_pop(&pop),
         &Instruction::Add => generate_operation(Instruction::Add),
         &Instruction::Sub => generate_operation(Instruction::Sub),
         &Instruction::And => generate_operation(Instruction::And),
