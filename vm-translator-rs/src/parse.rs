@@ -20,6 +20,12 @@ pub enum Binary {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Function {
+    name: String,
+    local_count: u16,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Instruction {
     Push(MemoryLocation),
     Pop(MemoryLocation),
@@ -29,6 +35,8 @@ pub enum Instruction {
     Label(String),
     Goto(String),
     IfGoto(String),
+    Function(Function),
+    Return,
 }
 
 #[derive(Debug, PartialEq)]
@@ -105,6 +113,11 @@ fn parse_line(line: &str) -> Instruction {
         "label" => Instruction::Label(space_split[1].to_string()),
         "goto" => Instruction::Goto(space_split[1].to_string()),
         "if-goto" => Instruction::IfGoto(space_split[1].to_string()),
+        "function" => Instruction::Function(Function {
+            name: space_split[1].to_string(),
+            local_count: space_split[2].parse::<u16>().unwrap(),
+        }),
+        "return" => Instruction::Return,
         _ => panic!("unknown instruction in line: {}", line),
     }
 }
@@ -161,5 +174,14 @@ mod tests {
         assert_eq!(parse_line("label foobar"), Instruction::Label("foobar".to_string()));
         assert_eq!(parse_line("goto blargh.argh"), Instruction::Goto("blargh.argh".to_string()));
         assert_eq!(parse_line("if-goto abcdefg:hijklmnop"), Instruction::IfGoto("abcdefg:hijklmnop".to_string()));
+    }
+
+    #[test]
+    fn test_function_return() {
+        assert_eq!(parse_line("function Sys.init 0"), Instruction::Function(Function {
+            name: "Sys.init".to_string(),
+            local_count: 0,
+        }));
+        assert_eq!(parse_line("return"), Instruction::Return);
     }
 }

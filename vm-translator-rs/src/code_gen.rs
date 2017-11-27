@@ -188,13 +188,10 @@ fn generate_if_goto(label: &str) -> Vec<String> {
     asm
 }
 
-// generate a label (either `FunctionName$label` or just `label` if outside a function)
-fn generate_label(label: &str, function_name: Option<&str>) -> Vec<String> {
-    if let Some(name) = function_name {
-        vec![format!("({}${})", name, label)]
-    } else {
-        vec![format!("({})", label)]
-    }
+// generate a label (ignoring the requirement of FunctionName$label in case it's in a function,
+// don't really want to rewrite the parser. how do you know you're "in a function" in VM code anyway?)
+fn generate_label(label: &str) -> Vec<String> {
+    vec![format!("({})", label)]
 }
 
 // delegates work for assembly-writing
@@ -208,7 +205,8 @@ fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
         &Instruction::Comparison(ref c) => generate_comparison_operation(c),
         &Instruction::Goto(ref l) => generate_goto(&l),
         &Instruction::IfGoto(ref l) => generate_if_goto(&l),
-        &Instruction::Label(ref l) => generate_label(&l, None),
+        &Instruction::Label(ref l) => generate_label(&l),
+        _ => panic!(),
     }
 }
 
@@ -237,7 +235,6 @@ mod tests {
 
     #[test]
     fn test_generate_label() {
-        assert_eq!(generate_label("blargh", None), vec!["(blargh)"]);
-        assert_eq!(generate_label("blargh", Some("argh")), vec!["(argh$blargh)"]);
+        assert_eq!(generate_label("blargh"), vec!["(blargh)"]);
     }
 }
