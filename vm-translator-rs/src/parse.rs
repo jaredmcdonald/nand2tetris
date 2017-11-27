@@ -26,6 +26,9 @@ pub enum Instruction {
     Comparison(Comparison),
     Unary(Unary),
     Binary(Binary),
+    Label(String),
+    Goto(String),
+    IfGoto(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -99,6 +102,9 @@ fn parse_line(line: &str) -> Instruction {
         "or" => Instruction::Binary(Binary::Or),
         "neg" => Instruction::Unary(Unary::Neg),
         "not" => Instruction::Unary(Unary::Not),
+        "label" => Instruction::Label(space_split[1].to_string()),
+        "goto" => Instruction::Goto(space_split[1].to_string()),
+        "if-goto" => Instruction::IfGoto(space_split[1].to_string()),
         _ => panic!("unknown instruction in line: {}", line),
     }
 }
@@ -148,5 +154,12 @@ mod tests {
     fn test_parse_comments_whitespace() {
         let test_lines = vec!["// Hello".to_string(), " push constant 12 // Hi".to_string(), " ".to_string()];
         assert_eq!(parse(test_lines.as_slice()).len(), 1);
+    }
+
+    #[test]
+    fn test_parse_control_flow() {
+        assert_eq!(parse_line("label foobar"), Instruction::Label("foobar".to_string()));
+        assert_eq!(parse_line("goto blargh.argh"), Instruction::Goto("blargh.argh".to_string()));
+        assert_eq!(parse_line("if-goto abcdefg:hijklmnop"), Instruction::IfGoto("abcdefg:hijklmnop".to_string()));
     }
 }

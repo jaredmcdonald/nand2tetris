@@ -177,6 +177,7 @@ fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
         &Instruction::Binary(ref b) => generate_binary_or_unary(&BinaryOrUnary::Binary(*b)),
         &Instruction::Unary(ref u) => generate_binary_or_unary(&BinaryOrUnary::Unary(*u)),
         &Instruction::Comparison(ref c) => generate_comparison_operation(c),
+        _ => panic!("unimplemented"),
     }
 }
 
