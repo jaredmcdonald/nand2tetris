@@ -1,4 +1,4 @@
-use parse::{Instruction, MemoryLocation, Comparison, Binary, Unary, MemorySegment, Function};
+use parse::{Instruction, MemoryLocation, Comparison, Binary, Unary, MemorySegment, Function, FunctionCall};
 use rand::random;
 
 // convenience enum, because the binary/unary generation code looks a lot alike (but we still should
@@ -263,6 +263,47 @@ fn generate_function(function: &Function) -> Vec<String> {
     asm
 }
 
+fn generate_call(call: &FunctionCall) -> Vec<String> {
+    let return_addr = format!("call-{}-{:x}", call.name, random::<u64>());
+    let mut asm = vec![
+        format!("@{}", return_addr),
+        "D=A".to_string(),     // put the return address label into D...
+    ];
+    asm.extend(push_from_d()); // ...then push it to the stack
+
+    // push LCL, ARG, THIS n THAT
+    for symbol in ["LCL", "ARG", "THIS", "THAT"].iter() {
+        asm.extend(
+            vec![
+                format!("@{}", symbol),
+                "D=M".to_string(),
+            ]
+        );
+        asm.extend(push_from_d());
+    }
+
+    asm.extend(
+        vec![
+            // move ARG by 5 + number of args
+            "@SP".to_string(),
+            "D=M".to_string(),
+            format!("@{}", 5 + call.arg_count),
+            "D=D-A".to_string(),
+            "@ARG".to_string(),
+            "M=D".to_string(),
+
+            // set LCL to SP
+            "@SP".to_string(),
+            "D=M".to_string(),
+            "@LCL".to_string(),
+            "M=D".to_string(),
+        ]
+    );
+    asm.extend(generate_goto(&call.name));  // jump to function
+    asm.push(format!("({})", return_addr)); // finally, add the return address label
+    asm
+}
+
 // delegates work for assembly-writing
 fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
     match instruction {
@@ -277,7 +318,7 @@ fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
         &Instruction::Label(ref l) => generate_label(&l),
         &Instruction::Function(ref f) => generate_function(&f),
         &Instruction::Return => generate_return(),
-        _ => panic!(),
+        &Instruction::Call(ref c) => generate_call(&c),
     }
 }
 
