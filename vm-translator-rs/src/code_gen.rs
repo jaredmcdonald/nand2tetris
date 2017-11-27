@@ -168,6 +168,35 @@ fn generate_pop(pop: &MemoryLocation, filename: &str) -> Vec<String> {
     asm
 }
 
+// generate an unconditional goto
+fn generate_goto(label: &str) -> Vec<String> {
+    vec![
+        format!("@{}", label), // load label into A register
+        "0;JMP".to_string(),   // unconditional jump
+    ]
+}
+
+// generate an if-goto (goto supplied label if whatever's at the top of the stack is nonzero)
+fn generate_if_goto(label: &str) -> Vec<String> {
+    let mut asm = pop_to_d();      // pop the stack into the D register
+    asm.extend(
+        vec![
+            format!("@{}", label), // load label into A register
+            "D;JNE".to_string(),   // jump if whatever's in D is nonzero
+        ]
+    );
+    asm
+}
+
+// generate a label (either `FunctionName$label` or just `label` if outside a function)
+fn generate_label(label: &str, function_name: Option<&str>) -> Vec<String> {
+    if let Some(name) = function_name {
+        vec![format!("({}${})", name, label)]
+    } else {
+        vec![format!("({})", label)]
+    }
+}
+
 // delegates work for assembly-writing
 fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
     match instruction {
@@ -177,7 +206,9 @@ fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
         &Instruction::Binary(ref b) => generate_binary_or_unary(&BinaryOrUnary::Binary(*b)),
         &Instruction::Unary(ref u) => generate_binary_or_unary(&BinaryOrUnary::Unary(*u)),
         &Instruction::Comparison(ref c) => generate_comparison_operation(c),
-        _ => panic!("unimplemented"),
+        &Instruction::Goto(ref l) => generate_goto(&l),
+        &Instruction::IfGoto(ref l) => generate_if_goto(&l),
+        &Instruction::Label(ref l) => generate_label(&l, None),
     }
 }
 
@@ -202,5 +233,11 @@ mod tests {
             generate_push(&push, "foobar"),
             vec!["@99", "D=A", "@SP", "A=M", "M=D", "@SP", "M=M+1"]
         );
+    }
+
+    #[test]
+    fn test_generate_label() {
+        assert_eq!(generate_label("blargh", None), vec!["(blargh)"]);
+        assert_eq!(generate_label("blargh", Some("argh")), vec!["(argh$blargh)"]);
     }
 }
