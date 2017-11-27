@@ -277,6 +277,7 @@ fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
         &Instruction::Label(ref l) => generate_label(&l),
         &Instruction::Function(ref f) => generate_function(&f),
         &Instruction::Return => generate_return(),
+        _ => panic!(),
     }
 }
 

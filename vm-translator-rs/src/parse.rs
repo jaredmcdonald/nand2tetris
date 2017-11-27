@@ -26,6 +26,12 @@ pub struct Function {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct FunctionCall {
+    pub name: String,
+    pub arg_count: u16,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Instruction {
     Push(MemoryLocation),
     Pop(MemoryLocation),
@@ -36,6 +42,7 @@ pub enum Instruction {
     Goto(String),
     IfGoto(String),
     Function(Function),
+    Call(FunctionCall),
     Return,
 }
 
@@ -117,6 +124,10 @@ fn parse_line(line: &str) -> Instruction {
             name: space_split[1].to_string(),
             local_count: space_split[2].parse::<u16>().unwrap(),
         }),
+        "call" => Instruction::Call(FunctionCall {
+            name: space_split[1].to_string(),
+            arg_count: space_split[2].parse::<u16>().unwrap(),
+        }),
         "return" => Instruction::Return,
         _ => panic!("unknown instruction in line: {}", line),
     }
@@ -177,11 +188,19 @@ mod tests {
     }
 
     #[test]
-    fn test_function_return() {
+    fn test_parse_function_return() {
         assert_eq!(parse_line("function Sys.init 0"), Instruction::Function(Function {
             name: "Sys.init".to_string(),
             local_count: 0,
         }));
         assert_eq!(parse_line("return"), Instruction::Return);
+    }
+
+    #[test]
+    fn test_parse_function_call() {
+        assert_eq!(parse_line("call Arg.blarg 10"), Instruction::Call(FunctionCall {
+            name: "Arg.blarg".to_string(),
+            arg_count: 10,
+        }));
     }
 }
