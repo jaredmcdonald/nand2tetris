@@ -1,4 +1,4 @@
-use parse::{Instruction, MemoryLocation, Comparison, Binary, Unary, MemorySegment};
+use parse::{Instruction, MemoryLocation, Comparison, Binary, Unary, MemorySegment, Function};
 use rand::random;
 
 // convenience enum, because the binary/unary generation code looks a lot alike (but we still should
@@ -194,6 +194,75 @@ fn generate_label(label: &str) -> Vec<String> {
     vec![format!("({})", label)]
 }
 
+// generates assembly to restore caller memory, given which symbol and its offset from FRAME
+fn restore_symbol_for_caller(symbol: &str, frame_symbol: &str, offset: u8) -> Vec<String> {
+    vec![
+        frame_symbol.to_string(),
+        "D=M".to_string(),   // put FRAME into D
+        format!("@{}", offset),
+        "D=D-A".to_string(), // calculate FRAME-offset in D
+        "A=D".to_string(),   // we want what's at the address in D, so dereference by shuffling into A
+        "D=M".to_string(),   // and then put what's there back in M
+        format!("@{}", symbol),
+        "M=D".to_string(),   // then put it at the memory location specified by `symbol`
+    ]
+}
+
+fn generate_return() -> Vec<String> {
+    let frame = "@R13";
+    let ret = "@R14";
+    let mut asm = vec![
+        "@LCL".to_string(),  // load LCL in A
+        "D=M".to_string(),   // *LCL into D
+        frame.to_string(),   // load up temp variable for FRAME (above, R13) in A
+        "M=D".to_string(),   // put what we had in D, *LCL, into FRAME (R13)
+
+        "@5".to_string(),    // load constant 5
+        "D=D-A".to_string(), // subtract A register (5) from the previous *LCL value
+        "A=D".to_string(),   // dereference
+        "D=M".to_string(),   // put back in D (it's the return address pushed by the call)
+        ret.to_string(),     // load temp variable for RET (above, R14) in A
+        "M=D".to_string(),   // store what was in D, *(FRAME - 5), in RET (R14)
+    ];
+    asm.extend(pop_to_d());     // |
+    asm.extend(                 // |
+        vec![                   // | reposition the return value:
+            "@ARG".to_string(), // |   pop to D register and store at *ARG, aka, *ARG = pop()
+            "A=M".to_string(),  // |
+            "M=D".to_string(),  // |
+
+            "@ARG".to_string(),  // |
+            "D=M+1".to_string(), // |
+            "@SP".to_string(),   // | restore stack pointer of caller: SP = ARG+1
+            "M=D".to_string(),   // |
+        ]
+    );
+    asm.extend(restore_symbol_for_caller("THAT", frame, 1)); // restore THAT to *(FRAME - 1)
+    asm.extend(restore_symbol_for_caller("THIS", frame, 2)); // restore THIS to *(FRAME - 2)
+    asm.extend(restore_symbol_for_caller("ARG", frame, 3));  // restore ARG to *(FRAME - 3)
+    asm.extend(restore_symbol_for_caller("LCL", frame, 4));  // restore LCL to *(FRAME - 4)
+
+    asm.extend(
+        vec![
+            ret.to_string(),     // load up return address
+            "A=M".to_string(),   // dereference it
+            "0;JMP".to_string(), // jump there
+        ]
+    );
+    asm
+}
+
+fn generate_function(function: &Function) -> Vec<String> {
+    let mut asm = generate_label(&function.name);
+    for _ in 0..function.local_count {
+        asm.extend(generate_push(&MemoryLocation {
+            segment: MemorySegment::Constant,
+            index: 0,
+        }, ""))
+    }
+    asm
+}
+
 // delegates work for assembly-writing
 fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
     match instruction {
@@ -206,7 +275,8 @@ fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
         &Instruction::Goto(ref l) => generate_goto(&l),
         &Instruction::IfGoto(ref l) => generate_if_goto(&l),
         &Instruction::Label(ref l) => generate_label(&l),
-        _ => panic!(),
+        &Instruction::Function(ref f) => generate_function(&f),
+        &Instruction::Return => generate_return(),
     }
 }
 

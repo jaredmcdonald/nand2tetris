@@ -21,8 +21,8 @@ pub enum Binary {
 
 #[derive(Debug, PartialEq)]
 pub struct Function {
-    name: String,
-    local_count: u16,
+    pub name: String,
+    pub local_count: u16,
 }
 
 #[derive(Debug, PartialEq)]
