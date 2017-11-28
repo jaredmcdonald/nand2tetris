@@ -5,3 +5,4 @@ authors = ["Jared McDonald"]
 
 [dependencies]
 rand = "0.3.18"
+glob = "0.2.11"
