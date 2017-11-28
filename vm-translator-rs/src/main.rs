@@ -4,7 +4,7 @@ extern crate glob;
 mod parse;
 mod code_gen;
 
-use parse::parse;
+use parse::{parse, ParseError};
 use code_gen::{generate, bootstrap};
 
 use glob::{glob, PatternError, GlobError};
@@ -18,7 +18,8 @@ use std::io::{self, BufReader, BufRead};
 enum CliError {
     IoError(io::Error),
     PatternError(PatternError),
-    GlobError(GlobError)
+    GlobError(GlobError),
+    ParseError(ParseError),
 }
 
 impl From<io::Error> for CliError {
@@ -39,13 +40,19 @@ impl From<GlobError> for CliError {
     }
 }
 
+impl From<ParseError> for CliError {
+    fn from(error: ParseError) -> Self {
+        CliError::ParseError(error)
+    }
+}
+
 fn compile_file(filename: &Path) -> Result<Vec<String>, CliError> {
     let file = File::open(&filename)?;
     let file_reader = BufReader::new(&file);
     let lines = file_reader.lines().collect::<Result<Vec<String>, _>>();
     let name = filename.file_stem().unwrap().to_str().unwrap();
     Ok(generate(
-        parse(lines?.as_slice()).as_slice(),
+        parse(lines?.as_slice())?.as_slice(),
         name
     ))
 }

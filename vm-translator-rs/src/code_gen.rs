@@ -126,8 +126,8 @@ fn get_address_in_a(location: &MemoryLocation, filename: &str) -> Vec<String> {
         MemorySegment::Argument => "ARG",
         MemorySegment::This => "THIS",
         MemorySegment::That => "THAT",
-        // 👇 this is another case where i'd like to "subset" enums... is there a more elegant way?
-        MemorySegment::Constant => panic!("why did a constant get to this function?"),
+        // early return for constants, just load it directly into A
+        MemorySegment::Constant => return vec![format!("@{}", location.index)],
     };
     vec![
         format!("@{}", location.index),  // put the offset (index) into A
@@ -139,17 +139,13 @@ fn get_address_in_a(location: &MemoryLocation, filename: &str) -> Vec<String> {
 
 // generate assembly for a push instruction
 fn generate_push(push: &MemoryLocation, filename: &str) -> Vec<String> {
-    let mut asm = if push.segment == MemorySegment::Constant {
-        vec![
-            format!("@{}", push.index), // load the constant into A
-            "D=A".to_string(),          // save it in D
-        ]
+    let mut asm = get_address_in_a(&push, filename); // get address of memory segment in A (or the constant itself)
+    if push.segment == MemorySegment::Constant {
+        asm.push("D=A".to_string()); // move constant directly into D
     } else {
-        let mut got_address = get_address_in_a(&push, filename); // get address of memory segment in A
-        got_address.push("D=M".to_string());                     // move it to the D register
-        got_address
-    };
-    asm.extend(push_from_d()); // push what's in D to the stack
+        asm.push("D=M".to_string()); // otherwise move what's at address in A to the D register
+    }
+    asm.extend(push_from_d());       // finally, push what's in D to the stack
     asm
 }
 
