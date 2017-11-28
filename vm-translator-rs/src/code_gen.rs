@@ -331,6 +331,20 @@ pub fn generate(instructions: &[Instruction], filename: &str) -> Vec<String> {
     result
 }
 
+pub fn bootstrap() -> Vec<String> {
+    let mut asm = vec![
+        "@256".to_string(),
+        "D=A".to_string(),
+        "@SP".to_string(),
+        "M=D".to_string(),       // initialize stack pointer to RAM[256]...
+    ];
+    asm.extend(generate_call(&FunctionCall {
+        name: "Sys.init".to_string(),
+        arg_count: 0,
+    }));
+    asm
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
