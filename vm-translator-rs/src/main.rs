@@ -7,39 +7,69 @@ mod code_gen;
 use parse::parse;
 use code_gen::{generate, bootstrap};
 
-use glob::glob;
-use std::path::Path;
+use glob::{glob, PatternError, GlobError};
+use std::path::{Path, PathBuf};
 use std::env::args;
 use std::fs::{File, metadata};
-use std::io::{BufReader, BufRead, Result};
+use std::io::{self, BufReader, BufRead};
 
-fn compile_file(filename: &str) -> Result<Vec<String>> {
-    let f = File::open(&filename)?;
-    let file = BufReader::new(&f);
-    // todo: see if i can eliminate this unwrap            👇
-    let lines: Vec<String> = file.lines().map(|line| line.unwrap()).collect();
-    let name = Path::new(&filename).file_stem().unwrap().to_str().unwrap();
+// https://doc.rust-lang.org/std/convert/trait.From.html
+#[derive(Debug)]
+enum CliError {
+    IoError(io::Error),
+    PatternError(PatternError),
+    GlobError(GlobError)
+}
+
+impl From<io::Error> for CliError {
+    fn from(error: io::Error) -> Self {
+        CliError::IoError(error)
+    }
+}
+
+impl From<PatternError> for CliError {
+    fn from(error: PatternError) -> Self {
+        CliError::PatternError(error)
+    }
+}
+
+impl From<GlobError> for CliError {
+    fn from(error: GlobError) -> Self {
+        CliError::GlobError(error)
+    }
+}
+
+fn compile_file(filename: &Path) -> Result<Vec<String>, CliError> {
+    let file = File::open(&filename)?;
+    let file_reader = BufReader::new(&file);
+    let lines = file_reader.lines().collect::<Result<Vec<String>, _>>();
+    let name = filename.file_stem().unwrap().to_str().unwrap();
     Ok(generate(
-        parse(lines.as_slice()).as_slice(),
+        parse(lines?.as_slice()).as_slice(),
         name
     ))
 }
 
-fn compile_directory(directory_path: &str) -> Vec<String> {
-    glob(&format!("{}/*.vm", directory_path)).unwrap()
-        .flat_map(|path| compile_file(path.unwrap().to_str().unwrap()).unwrap()) // what could possibly go wrong? 🙀
-        .collect() // is there a way to return this without collecting?
+fn compile_directory(directory_path: &str) -> Result<Vec<String>, CliError> {
+    let filenames = glob(&format!("{}/*.vm", directory_path))?
+        .collect::<Result<Vec<PathBuf>, _>>()?;
+
+    let mut compiled = Vec::new();
+    for result in filenames.iter().map(|path_buf| compile_file(path_buf.as_path())) {
+        compiled.extend(result?);
+    }
+    Ok(compiled)
 }
 
-fn compile() -> Result<()> {
+fn compile() -> Result<(), CliError> {
     // is there a more idiomatic way to concatenate `Vec`s than `let mut` + `extend`?
     let mut lines = bootstrap();
     let target = args().nth(1).unwrap_or(".".to_string());
     let fs_metadata = metadata(&target)?;
     let additional_lines = if fs_metadata.is_dir() {
-        compile_directory(&target)
+        compile_directory(&target)?
     } else {
-        compile_file(&target)?
+        compile_file(Path::new(&target))?
     };
     lines.extend(additional_lines);
     for line in lines {
@@ -52,6 +82,6 @@ fn compile() -> Result<()> {
 fn main() {
     match compile() {
         Ok(_) => (),
-        Err(e) => panic!("{}", e),
+        Err(e) => panic!("error!\n{:?}", e),
     }
 }
