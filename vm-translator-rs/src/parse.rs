@@ -66,8 +66,16 @@ pub struct MemoryLocation {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum ParseErrorKind {
+    UnrecognizedMemorySegment,
+    ParseIntError,
+    ArityMismatch,
+    UnrecognizedInstruction,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct ParseError {
-    pub message: String,
+    pub kind: ParseErrorKind,
     pub source: String,
 }
 
@@ -99,7 +107,7 @@ fn to_memory_segment(name: &str, context: &str) -> Result<MemorySegment, ParseEr
         "pointer" => Ok(MemorySegment::Pointer),
         "temp" => Ok(MemorySegment::Temp),
         "static" => Ok(MemorySegment::Static),
-        _ => Err(ParseError { message: "unrecognized memory segment".to_string(), source: context.to_string() }),
+        _ => Err(ParseError { kind: ParseErrorKind::UnrecognizedMemorySegment, source: context.to_string() }),
     }
 }
 
@@ -107,24 +115,40 @@ fn parse_number(i: &str, context: &str) -> Result<u16, ParseError> {
     match i.parse::<u16>() {
         Ok(result) => Ok(result),
         _ => Err(ParseError {
-            message: "error parsing number".to_string(),
+            kind: ParseErrorKind::ParseIntError,
             source: context.to_string(),
         }),
+    }
+}
+
+fn incorrect_arity(context: &str) -> ParseError {
+    ParseError {
+        kind: ParseErrorKind::ArityMismatch,
+        source: context.to_string(),
     }
 }
 
 // assumes the line has already been stripped of whitespace and comments
 fn parse_line(line: &str) -> Result<Instruction, ParseError> {
     let space_split = line.split(" ").collect::<Vec<&str>>();
+    let len = space_split.len();
     match space_split[0] {
-        "push" => Ok(Instruction::Push(MemoryLocation {
-            segment: to_memory_segment(space_split[1], line)?,
-            index: parse_number(space_split[2], line)?,
-        })),
-        "pop" => Ok(Instruction::Pop(MemoryLocation {
-            segment: to_memory_segment(space_split[1], line)?,
-            index: parse_number(space_split[2], line)?,
-        })),
+        "push" => {
+            if len == 3 { // probably a nicer way to do all the arity checking, hmmmm
+                Ok(Instruction::Push(MemoryLocation {
+                    segment: to_memory_segment(space_split[1], line)?,
+                    index: parse_number(space_split[2], line)?,
+                }))
+            } else { Err(incorrect_arity(line)) }
+        },
+        "pop" => {
+            if len == 3 {
+                Ok(Instruction::Pop(MemoryLocation {
+                    segment: to_memory_segment(space_split[1], line)?,
+                    index: parse_number(space_split[2], line)?,
+                }))
+            } else { Err(incorrect_arity(line)) }
+        },
         "eq" => Ok(Instruction::Comparison(Comparison::Eq)),
         "gt" => Ok(Instruction::Comparison(Comparison::Gt)),
         "lt" => Ok(Instruction::Comparison(Comparison::Lt)),
@@ -134,19 +158,39 @@ fn parse_line(line: &str) -> Result<Instruction, ParseError> {
         "or" => Ok(Instruction::Binary(Binary::Or)),
         "neg" => Ok(Instruction::Unary(Unary::Neg)),
         "not" => Ok(Instruction::Unary(Unary::Not)),
-        "label" => Ok(Instruction::Label(space_split[1].to_string())),
-        "goto" => Ok(Instruction::Goto(space_split[1].to_string())),
-        "if-goto" => Ok(Instruction::IfGoto(space_split[1].to_string())),
-        "function" => Ok(Instruction::Function(Function {
-            name: space_split[1].to_string(),
-            local_count: parse_number(space_split[2], line)?,
-        })),
-        "call" => Ok(Instruction::Call(FunctionCall {
-            name: space_split[1].to_string(),
-            arg_count: parse_number(space_split[2], line)?,
-        })),
+        "label" => {
+            if len == 2 {
+                Ok(Instruction::Label(space_split[1].to_string()))
+            } else { Err(incorrect_arity(line)) }
+        },
+        "goto" => {
+            if len == 2 {
+                Ok(Instruction::Goto(space_split[1].to_string()))
+            } else { Err(incorrect_arity(line)) }
+        },
+        "if-goto" => {
+            if len == 2 {
+                Ok(Instruction::IfGoto(space_split[1].to_string()))
+            } else { Err(incorrect_arity(line)) }
+        },
+        "function" => {
+            if len == 3 {
+                Ok(Instruction::Function(Function {
+                    name: space_split[1].to_string(),
+                    local_count: parse_number(space_split[2], line)?,
+                }))
+            } else { Err(incorrect_arity(line)) }
+        },
+        "call" => {
+            if len == 3 {
+                Ok(Instruction::Call(FunctionCall {
+                    name: space_split[1].to_string(),
+                    arg_count: parse_number(space_split[2], line)?,
+                }))
+            } else { Err(incorrect_arity(line)) }
+        },
         "return" => Ok(Instruction::Return),
-        _ => Err(ParseError { message: "unknown instruction".to_string(), source: line.to_string() }),
+        _ => Err(ParseError { kind: ParseErrorKind::UnrecognizedInstruction, source: line.to_string() }),
     }
 }
 
@@ -198,6 +242,19 @@ mod tests {
     }
 
     #[test]
+    fn test_bail_on_first_error() {
+        // eventually it would be nice to get both errors
+        let test_lines = vec!["push constant".to_string(), "argh blargh".to_string()];
+        assert_eq!(
+            parse(test_lines.as_slice()),
+            Err(ParseError {
+                kind: ParseErrorKind::ArityMismatch,
+                source: "push constant".to_string(),
+            })
+        );
+    }
+
+    #[test]
     fn test_parse_control_flow() {
         assert_eq!(parse_line("label foobar").unwrap(), Instruction::Label("foobar".to_string()));
         assert_eq!(parse_line("goto blargh.argh").unwrap(), Instruction::Goto("blargh.argh".to_string()));
@@ -222,12 +279,40 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_unknown() {
+    fn test_parse_errors() {
         assert_eq!(
             parse_line("something-unimplemented 123"),
             Err(ParseError {
-                message: "unknown instruction".to_string(),
+                kind: ParseErrorKind::UnrecognizedInstruction,
                 source: "something-unimplemented 123".to_string()
+            })
+        );
+        assert_eq!(
+            parse_line("push constant argh"),
+            Err(ParseError {
+                kind: ParseErrorKind::ParseIntError,
+                source: "push constant argh".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_line("push blargh 1"),
+            Err(ParseError {
+                kind: ParseErrorKind::UnrecognizedMemorySegment,
+                source: "push blargh 1".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_line("push constant"),
+            Err(ParseError {
+                kind: ParseErrorKind::ArityMismatch,
+                source: "push constant".to_string(),
+            })
+        );
+        assert_eq!(
+            parse_line("goto"),
+            Err(ParseError {
+                kind: ParseErrorKind::ArityMismatch,
+                source: "goto".to_string(),
             })
         );
     }
