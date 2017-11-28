@@ -1,0 +1,23 @@
+class Main {
+function void main() {
+	var int memAddress;
+	let memAddress = 16384;
+	do Memory.poke(memAddress+0, 489);
+	do Memory.poke(memAddress+32, 41);
+	do Memory.poke(memAddress+64, 7407);
+	do Memory.poke(memAddress+96, 41);
+	do Memory.poke(memAddress+128, 489);
+	do Memory.poke(memAddress+160, 0);
+	do Memory.poke(memAddress+192, 15393);
+	do Memory.poke(memAddress+224, 9249);
+	do Memory.poke(memAddress+256, 9249);
+	do Memory.poke(memAddress+288, 9249);
+	do Memory.poke(memAddress+320, 15855);
+	do Memory.poke(memAddress+352, 0);
+	do Memory.poke(memAddress+384, 0);
+	do Memory.poke(memAddress+416, 0);
+	do Memory.poke(memAddress+448, 0);
+	do Memory.poke(memAddress+480, 0);
+	return;
+}
+}
