@@ -11,11 +11,11 @@ enum BinaryOrUnary {
 
 // pop the stack to D register
 fn pop_to_d() -> Vec<String> {
-    vec![
-        "@SP".to_string(),  // load stack pointer
+    vec![ // how to get rid of all the `to_string()`? or should I?
+        "@SP".to_string(),   // load stack pointer
         "M=M-1".to_string(), // decrement it
-        "A=M".to_string(),  // dereference
-        "D=M".to_string(),  // put it in D
+        "A=M".to_string(),   // dereference
+        "D=M".to_string(),   // put it in D
     ]
 }
 
@@ -72,6 +72,7 @@ fn generate_binary_or_unary(instruction: &BinaryOrUnary) -> Vec<String> {
         &BinaryOrUnary::Unary(_) => false,
     };
 
+    // how to have a constant map instead of needing to evaluate this every time?
     let operator = match instruction {
         &BinaryOrUnary::Binary(Binary::Add) => "+",
         &BinaryOrUnary::Binary(Binary::Sub) => "-",
@@ -100,28 +101,31 @@ fn generate_binary_or_unary(instruction: &BinaryOrUnary) -> Vec<String> {
     asm
 }
 
+const POINTER_INDEX: u16 = 3;
+const TEMP_INDEX: u16 = 5;
+
 // given a memory segment and index (and filename, for static), generate assembly to put the
 // address in the A register
 fn get_address_in_a(location: &MemoryLocation, filename: &str) -> Vec<String> {
-    // temp and pointer are fixed (RAM 3 and 5, respectively),
-    // so just load them into A directly
-    if location.segment == MemorySegment::Pointer {
-        return vec![format!("@{}", 3 + location.index)];
-    } else if location.segment == MemorySegment::Temp {
-        return vec![format!("@{}", 5 + location.index)];
-    } else if location.segment == MemorySegment::Static {
-        // statics are just symbols with the form Filename.index, e.g., MyStupidFile.12
-        return vec![format!("@{}.{}", filename, location.index)];
-    }
-
     let asm_base_symbol = match location.segment {
+        // pointer, temp, static return early (though kind of janky to do it from inside the `let`)
+        // temp and pointer are fixed, so just load them into A directly
+        MemorySegment::Pointer => {
+            return vec![format!("@{}", POINTER_INDEX + location.index)];
+        },
+        MemorySegment::Temp => {
+            return vec![format!("@{}", TEMP_INDEX + location.index)];
+        },
+        MemorySegment::Static => {
+            // statics are just symbols with the form Filename.index, e.g., MyStupidFile.12
+            return vec![format!("@{}.{}", filename, location.index)];
+        },
         MemorySegment::Local => "LCL",
         MemorySegment::Argument => "ARG",
         MemorySegment::This => "THIS",
         MemorySegment::That => "THAT",
-        // this will never happen (ha) since we've already accounted for the other memory segments
-        // above, but the compiler doesn't know about that
-        _ => panic!("unimplemented memory segment: {:?}", location.segment),
+        // 👇 this is another case where i'd like to "subset" enums... is there a more elegant way?
+        MemorySegment::Constant => panic!("why did a constant get to this function?"),
     };
     vec![
         format!("@{}", location.index), // put the offset (index) into A
@@ -149,20 +153,21 @@ fn generate_push(push: &MemoryLocation, filename: &str) -> Vec<String> {
 
 // generate assembly for a pop instruction
 fn generate_pop(pop: &MemoryLocation, filename: &str) -> Vec<String> {
+    let temp_ram = "@R13";
     let mut asm = get_address_in_a(pop, filename); // load the target address to pop to into A
     asm.extend(
         vec![
-            "D=A".to_string(),  // move address into D
-            "@R13".to_string(), // load up R13 address into A
-            "M=D".to_string(),  // store address in R13 because our computer sucks and doesn't have enough registers
+            "D=A".to_string(),    // move address into D
+            temp_ram.to_string(), // load up R13 address into A
+            "M=D".to_string(),    // store address in R13 because our computer sucks and doesn't have enough registers
         ]
     );
     asm.extend(pop_to_d()); // pop the stack into the D register
     asm.extend(
         vec![
-            "@R13".to_string(), // get R13 in A register
-            "A=M".to_string(),  // dereference (this is where we put the target address, above)
-            "M=D".to_string(),  // save to memory
+            temp_ram.to_string(), // get R13 in A register
+            "A=M".to_string(),    // dereference (this is where we put the target address, above)
+            "M=D".to_string(),    // save to memory
         ]
     );
     asm
@@ -237,10 +242,11 @@ fn generate_return() -> Vec<String> {
             "M=D".to_string(),   // |
         ]
     );
-    asm.extend(restore_symbol_for_caller("THAT", frame, 1)); // restore THAT to *(FRAME - 1)
-    asm.extend(restore_symbol_for_caller("THIS", frame, 2)); // restore THIS to *(FRAME - 2)
-    asm.extend(restore_symbol_for_caller("ARG", frame, 3));  // restore ARG to *(FRAME - 3)
-    asm.extend(restore_symbol_for_caller("LCL", frame, 4));  // restore LCL to *(FRAME - 4)
+
+    // restore THAT, THIS, ARG, LCL to *(FRAME - respective offset)
+    for &(symbol, offset) in [("THAT", 1), ("THIS", 2), ("ARG", 3), ("LCL", 4)].iter() {
+        asm.extend(restore_symbol_for_caller(symbol, frame, offset));
+    }
 
     asm.extend(
         vec![
@@ -324,11 +330,7 @@ fn generate_line(instruction: &Instruction, filename: &str) -> Vec<String> {
 
 // outer function that takes parsed Instructions and returns generated assembly
 pub fn generate(instructions: &[Instruction], filename: &str) -> Vec<String> {
-    let mut result = Vec::new();
-    for instruction_set in instructions.iter().map(|l| generate_line(l, filename)) {
-        result.extend(instruction_set);
-    }
-    result
+    instructions.iter().flat_map(|l| generate_line(l, filename)).collect()
 }
 
 pub fn bootstrap() -> Vec<String> {

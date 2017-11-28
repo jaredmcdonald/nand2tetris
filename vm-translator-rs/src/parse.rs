@@ -31,6 +31,7 @@ pub struct FunctionCall {
     pub arg_count: u16,
 }
 
+// is there a better way of subsetting enums? probably
 #[derive(Debug, PartialEq)]
 pub enum Instruction {
     Push(MemoryLocation),
