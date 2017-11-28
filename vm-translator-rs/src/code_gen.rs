@@ -46,7 +46,7 @@ fn generate_comparison_operation(comparison: &Comparison) -> Vec<String> {
     let continue_label = format!("continue.{:x}", number_for_label);
 
     let mut asm = pop_to_d();
-    asm.extend(vec![
+    let compare = vec![
         "@SP".to_string(),           // load the stack pointer
         "M=M-1".to_string(),         // decrement (pop)
         "A=M".to_string(),           // dereference
@@ -59,7 +59,8 @@ fn generate_comparison_operation(comparison: &Comparison) -> Vec<String> {
         format!("({})", true_branch_label),
         "D=-1".to_string(),          // -1 means true
         format!("({})", continue_label),
-    ]);
+    ];
+    asm.extend(compare);
     asm.extend(push_from_d());
     asm
 }
@@ -82,18 +83,19 @@ fn generate_binary_or_unary(instruction: &BinaryOrUnary) -> Vec<String> {
         &BinaryOrUnary::Unary(Unary::Neg) => "-",
     };
     let operand = if is_binary { "D" } else { "" };
-    let mut asm = if is_binary {     // if a binary operation,
-        pop_to_d()                   // pop first argument off the stack into D
+    let mut asm = if is_binary { // if a binary operation,
+        pop_to_d()               // pop first argument off the stack into D
     } else {
         Vec::new()
     };
-    asm.extend(vec![
-        "@SP".to_string(),           // load the stack pointer
-        "M=M-1".to_string(),         // decrement (pop)
-        "A=M".to_string(),           // dereference
+    let pop_and_op = vec![
+        "@SP".to_string(),                     // load the stack pointer
+        "M=M-1".to_string(),                   // decrement (pop)
+        "A=M".to_string(),                     // dereference
         format!("D={}{}M", operand, operator), // perform operation
-    ]);
-    asm.extend(push_from_d());       // push the result (in D) to the stack
+    ];
+    asm.extend(pop_and_op);
+    asm.extend(push_from_d()); // push the result (in D) to the stack
     if instruction == &BinaryOrUnary::Binary(Binary::Sub) {
         // hack: for subtraction, operands are "backwards", so we need to negate the result
         asm.extend(generate_binary_or_unary(&BinaryOrUnary::Unary(Unary::Neg)));
@@ -128,10 +130,10 @@ fn get_address_in_a(location: &MemoryLocation, filename: &str) -> Vec<String> {
         MemorySegment::Constant => panic!("why did a constant get to this function?"),
     };
     vec![
-        format!("@{}", location.index), // put the offset (index) into A
-        "D=A".to_string(),     // move it to D
+        format!("@{}", location.index),  // put the offset (index) into A
+        "D=A".to_string(),               // move it to D
         format!("@{}", asm_base_symbol), // load the symbol into A
-        "A=M+D".to_string(),   // dereference and add the offset (in D)
+        "A=M+D".to_string(),             // dereference and add the offset (in D)
     ]
 }
 
@@ -143,8 +145,8 @@ fn generate_push(push: &MemoryLocation, filename: &str) -> Vec<String> {
             "D=A".to_string(),          // save it in D
         ]
     } else {
-        let mut got_address = get_address_in_a(&push, filename); // get the address of the memory segment in A
-        got_address.push("D=M".to_string()); // move it to the D register
+        let mut got_address = get_address_in_a(&push, filename); // get address of memory segment in A
+        got_address.push("D=M".to_string());                     // move it to the D register
         got_address
     };
     asm.extend(push_from_d()); // push what's in D to the stack
@@ -155,21 +157,19 @@ fn generate_push(push: &MemoryLocation, filename: &str) -> Vec<String> {
 fn generate_pop(pop: &MemoryLocation, filename: &str) -> Vec<String> {
     let temp_ram = "@R13";
     let mut asm = get_address_in_a(pop, filename); // load the target address to pop to into A
-    asm.extend(
-        vec![
-            "D=A".to_string(),    // move address into D
-            temp_ram.to_string(), // load up R13 address into A
-            "M=D".to_string(),    // store address in R13 because our computer sucks and doesn't have enough registers
-        ]
-    );
-    asm.extend(pop_to_d()); // pop the stack into the D register
-    asm.extend(
-        vec![
-            temp_ram.to_string(), // get R13 in A register
-            "A=M".to_string(),    // dereference (this is where we put the target address, above)
-            "M=D".to_string(),    // save to memory
-        ]
-    );
+    let store_in_temp = vec![
+        "D=A".to_string(),    // move address into D
+        temp_ram.to_string(), // load up R13 address into A
+        "M=D".to_string(),    // store address in R13 because our computer sucks and doesn't have enough registers
+    ];
+    asm.extend(store_in_temp);
+    asm.extend(pop_to_d());   // pop the stack into the D register
+    let save_to_memory = vec![
+        temp_ram.to_string(), // get R13 in A register
+        "A=M".to_string(),    // dereference (this is where we put the target address, above)
+        "M=D".to_string(),    // save to memory
+    ];
+    asm.extend(save_to_memory);
     asm
 }
 
@@ -183,13 +183,12 @@ fn generate_goto(label: &str) -> Vec<String> {
 
 // generate an if-goto (goto supplied label if whatever's at the top of the stack is nonzero)
 fn generate_if_goto(label: &str) -> Vec<String> {
-    let mut asm = pop_to_d();      // pop the stack into the D register
-    asm.extend(
-        vec![
-            format!("@{}", label), // load label into A register
-            "D;JNE".to_string(),   // jump if whatever's in D is nonzero
-        ]
-    );
+    let mut asm = pop_to_d();  // pop the stack into the D register
+    let conditional_jump = vec![
+        format!("@{}", label), // load label into A register
+        "D;JNE".to_string(),   // jump if whatever's in D is nonzero
+    ];
+    asm.extend(conditional_jump);
     asm
 }
 
@@ -229,32 +228,29 @@ fn generate_return() -> Vec<String> {
         ret.to_string(),     // load temp variable for RET (above, R14) in A
         "M=D".to_string(),   // store what was in D, *(FRAME - 5), in RET (R14)
     ];
-    asm.extend(pop_to_d());     // |
-    asm.extend(                 // |
-        vec![                   // | reposition the return value:
-            "@ARG".to_string(), // |   pop to D register and store at *ARG, aka, *ARG = pop()
-            "A=M".to_string(),  // |
-            "M=D".to_string(),  // |
+    asm.extend(pop_to_d()); // |
+    let next_step = vec![   // | reposition the return value:
+        "@ARG".to_string(), // |   pop to D register and store at *ARG, aka, *ARG = pop()
+        "A=M".to_string(),  // |
+        "M=D".to_string(),  // |
 
-            "@ARG".to_string(),  // |
-            "D=M+1".to_string(), // |
-            "@SP".to_string(),   // | restore stack pointer of caller: SP = ARG+1
-            "M=D".to_string(),   // |
-        ]
-    );
+        "@ARG".to_string(),  // |
+        "D=M+1".to_string(), // |
+        "@SP".to_string(),   // | restore stack pointer of caller: SP = ARG+1
+        "M=D".to_string(),   // |
+    ];
+    asm.extend(next_step);
 
     // restore THAT, THIS, ARG, LCL to *(FRAME - respective offset)
     for &(symbol, offset) in [("THAT", 1), ("THIS", 2), ("ARG", 3), ("LCL", 4)].iter() {
         asm.extend(restore_symbol_for_caller(symbol, frame, offset));
     }
-
-    asm.extend(
-        vec![
-            ret.to_string(),     // load up return address
-            "A=M".to_string(),   // dereference it
-            "0;JMP".to_string(), // jump there
-        ]
-    );
+    let jump_to_return = vec![
+        ret.to_string(),     // load up return address
+        "A=M".to_string(),   // dereference it
+        "0;JMP".to_string(), // jump there
+    ];
+    asm.extend(jump_to_return);
     asm
 }
 
@@ -281,32 +277,30 @@ fn generate_call(call: &FunctionCall) -> Vec<String> {
 
     // push LCL, ARG, THIS n THAT
     for symbol in ["LCL", "ARG", "THIS", "THAT"].iter() {
-        asm.extend(
-            vec![
-                format!("@{}", symbol),
-                "D=M".to_string(),
-            ]
-        );
+        let pushed_symbol = vec![
+            format!("@{}", symbol),
+            "D=M".to_string(),
+        ];
+        asm.extend(pushed_symbol);
         asm.extend(push_from_d());
     }
 
-    asm.extend(
-        vec![
-            // move ARG by 5 + number of args
-            "@SP".to_string(),
-            "D=M".to_string(),
-            format!("@{}", 5 + call.arg_count),
-            "D=D-A".to_string(),
-            "@ARG".to_string(),
-            "M=D".to_string(),
+    let move_arg_and_reset_lcl = vec![
+        // move ARG by 5 + number of args
+        "@SP".to_string(),
+        "D=M".to_string(),
+        format!("@{}", 5 + call.arg_count),
+        "D=D-A".to_string(),
+        "@ARG".to_string(),
+        "M=D".to_string(),
 
-            // set LCL to SP
-            "@SP".to_string(),
-            "D=M".to_string(),
-            "@LCL".to_string(),
-            "M=D".to_string(),
-        ]
-    );
+        // set LCL to SP
+        "@SP".to_string(),
+        "D=M".to_string(),
+        "@LCL".to_string(),
+        "M=D".to_string(),
+    ];
+    asm.extend(move_arg_and_reset_lcl);
     asm.extend(generate_goto(&call.name));  // jump to function
     asm.push(format!("({})", return_addr)); // finally, add the return address label
     asm
@@ -335,14 +329,15 @@ pub fn generate(instructions: &[Instruction], filename: &str) -> Vec<String> {
     instructions.iter().flat_map(|l| generate_line(l, filename)).collect()
 }
 
+// generates assembly for system bootstrap - sets up stack pointer and calls Sys.init
 pub fn bootstrap() -> Vec<String> {
     let mut asm = vec![
         "@256".to_string(),
         "D=A".to_string(),
         "@SP".to_string(),
-        "M=D".to_string(),       // initialize stack pointer to RAM[256]...
+        "M=D".to_string(), // initialize stack pointer to RAM[256]
     ];
-    asm.extend(generate_call(&FunctionCall {
+    asm.extend(generate_call(&FunctionCall { // and call Sys.init()
         name: "Sys.init".to_string(),
         arg_count: 0,
     }));
