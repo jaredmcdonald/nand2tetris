@@ -95,7 +95,7 @@ fn generate_binary_or_unary(instruction: &BinaryOrUnary) -> Vec<String> {
     ]);
     asm.extend(push_from_d());       // push the result (in D) to the stack
     if instruction == &BinaryOrUnary::Binary(Binary::Sub) {
-        // for subtraction, operands are "backwards", so we need to negate the result
+        // hack: for subtraction, operands are "backwards", so we need to negate the result
         asm.extend(generate_binary_or_unary(&BinaryOrUnary::Unary(Unary::Neg)));
     }
     asm
@@ -258,10 +258,11 @@ fn generate_return() -> Vec<String> {
     asm
 }
 
+// generate assembly for a function declaration
 fn generate_function(function: &Function) -> Vec<String> {
-    let mut asm = generate_label(&function.name);
+    let mut asm = generate_label(&function.name);  // label it
     for _ in 0..function.local_count {
-        asm.extend(generate_push(&MemoryLocation {
+        asm.extend(generate_push(&MemoryLocation { // push 0, `local_count` times
             segment: MemorySegment::Constant,
             index: 0,
         }, ""))
@@ -269,6 +270,7 @@ fn generate_function(function: &Function) -> Vec<String> {
     asm
 }
 
+// generate assembly for a call instruction
 fn generate_call(call: &FunctionCall) -> Vec<String> {
     let return_addr = format!("call-{}-{:x}", call.name, random::<u64>());
     let mut asm = vec![
