@@ -1,0 +1,7 @@
+[package]
+name = "jack-compiler"
+version = "0.1.0"
+authors = ["Jared McDonald <jared.r.mcdonald@gmail.com>"]
+
+[dependencies]
+regex = "0.2.0"
