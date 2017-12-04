@@ -65,7 +65,9 @@ pub enum Symbol {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct KeywordError {}
+pub struct KeywordError {
+    message: String,
+}
 
 impl TryInto<Keyword> for String {
     type Error = KeywordError;
@@ -74,7 +76,7 @@ impl TryInto<Keyword> for String {
         if let Some(kw) = map_string_to_keyword().get(&self) {
             Ok(*kw)
         } else {
-            Err(Self::Error {})
+            Err(Self::Error { message: format!("unrecognized keyword `{}`", self) })
         }
     }
 }
@@ -87,7 +89,9 @@ impl fmt::Display for Keyword {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct SymbolError {}
+pub struct SymbolError {
+    message: String,
+}
 
 impl TryInto<Symbol> for String {
     type Error = SymbolError;
@@ -96,7 +100,7 @@ impl TryInto<Symbol> for String {
         if let Some(sym) = map_string_to_symbol().get(&self) {
             Ok(*sym)
         } else {
-            Err(Self::Error {})
+            Err(Self::Error { message: format!("unrecognized symbol `{}`", self) })
         }
     }
 }
