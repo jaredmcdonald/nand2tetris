@@ -2,7 +2,7 @@ use std::fmt;
 use std::num::ParseIntError;
 use regex::{Regex, Captures, self};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Token {
     Keyword(String),
     Symbol(String),
@@ -143,6 +143,12 @@ mod test {
         );
 
         assert_eq!(tokenize("var int i, j;").unwrap().len(), 6);
+    }
+
+    #[test]
+    fn test_tokenize_string_precedence() {
+        assert_eq!(tokenize("\"int\"").unwrap()[0], Token::StringConstant("int".to_string()));
+        assert_eq!(tokenize("\"{}\"").unwrap()[0], Token::StringConstant("{}".to_string()));
     }
 
     #[test]
