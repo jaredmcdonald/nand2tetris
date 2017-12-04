@@ -1,4 +1,4 @@
-use tokenize::Token;
+use tokenize::{Token, Keyword};
 
 #[derive(Debug, PartialEq)]
 pub enum SubroutineType {
@@ -113,10 +113,10 @@ fn balance_symbol(tokens: &[Token], open: &str, close: &str) -> Result<usize, Pa
 
 fn parse_type(token: &Token) -> Result<Type, ParseError> {
     match token {
-        &Token::Keyword(ref kw) => match kw.as_ref() {
-            "int" => Ok(Type::Int),
-            "char" => Ok(Type::Char),
-            "boolean" => Ok(Type::Boolean),
+        &Token::Keyword(ref kw) => match kw {
+            &Keyword::Int => Ok(Type::Int),
+            &Keyword::Char => Ok(Type::Char),
+            &Keyword::Boolean => Ok(Type::Boolean),
             _ => Err(ParseError { message: format!("expected a type, got keyword {:?}", kw) }),
         },
         &Token::Identifier(ref id) => Ok(Type::Class(id.to_string())),
@@ -134,9 +134,9 @@ fn parse_identifier(token: &Token) -> Result<String, ParseError> {
 
 fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
     let var_type = match body[0] {
-        Token::Keyword(ref kw) => match kw.as_ref() {
-            "static" => ClassVarType::Static,
-            "field" => ClassVarType::Field,
+        Token::Keyword(ref kw) => match kw {
+            &Keyword::Static => ClassVarType::Static,
+            &Keyword::Field => ClassVarType::Field,
             _ => return Err(ParseError { message: format!("unexpected keyword in class var declaration: {}", kw) }),
         },
         _ => return Err(ParseError { message: format!("unexpected token in class var declaration: {:?}", body[0]) }),
@@ -197,7 +197,7 @@ fn parse_subroutine_body(body: &[Token]) -> Result<SubroutineBody, ParseError> {
     let mut parse_index = 0;
     let mut var_declarations = vec![];
     while parse_index < body.len() {
-        if body[parse_index] == Token::Keyword("var".to_string()) {
+        if body[parse_index] == Token::Keyword(Keyword::Var) {
             let declaration_end = tokens_until(&body[parse_index..], Token::Symbol(";".to_string()))?;
             var_declarations.push(parse_var(&body[parse_index..parse_index + declaration_end]));
             parse_index = parse_index + declaration_end + 1;
@@ -217,17 +217,17 @@ fn parse_subroutine(
         message: format!("expected `constructor`, `function` or `method`, got {:?}", subroutine_type_token),
     };
     let subroutine_type = if let &Token::Keyword(ref kw) = subroutine_type_token {
-        match kw.as_ref() {
-            "function" => SubroutineType::Function,
-            "constructor" => SubroutineType::Constructor,
-            "method" => SubroutineType::Method,
+        match kw {
+            &Keyword::Function => SubroutineType::Function,
+            &Keyword::Constructor => SubroutineType::Constructor,
+            &Keyword::Method => SubroutineType::Method,
             _ => return Err(subroutine_type_err),
         }
     } else {
         return Err(subroutine_type_err);
     };
 
-    let return_type = if return_type_token == &Token::Keyword("void".to_string()) {
+    let return_type = if return_type_token == &Token::Keyword(Keyword::Void) {
         SubroutineReturnType::Void
     } else {
         SubroutineReturnType::Type(parse_type(&subroutine_type_token)?)
@@ -252,11 +252,11 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
     let mut subroutines = vec![];
     while current_token_index < body.len() {
         if let Token::Keyword(ref keyword) = body[current_token_index] {
-            if keyword == "static" || keyword == "field" {
+            if keyword == &Keyword::Static || keyword == &Keyword::Field {
                 let end_index = tokens_until(&body[current_token_index..], Token::Symbol(";".to_string()))?;
                 class_vars.push(parse_class_var(&body[current_token_index..current_token_index + end_index])?);
                 current_token_index = end_index + 1;
-            } else if keyword ==  "constructor" || keyword == "function" || keyword == "method" {
+            } else if keyword == &Keyword::Constructor || keyword == &Keyword::Function || keyword == &Keyword::Method {
                 let subroutine_type = &body[current_token_index + 1];
                 let return_type = &body[current_token_index + 2];
                 let name = &body[current_token_index + 3];
@@ -288,7 +288,7 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
 }
 
 pub fn parse_outer(tokens: &[Token]) -> Result<Class, ParseError> {
-    if tokens[0] == Token::Keyword("class".to_string()) {
+    if tokens[0] == Token::Keyword(Keyword::Class) {
         if let Token::Identifier(ref classname) = tokens[1] {
             let body_end = balance_symbol(&tokens[2..], "{", "}")?;
             Ok(parse_class(&classname, &tokens[3..body_end + 2])?)
@@ -312,8 +312,8 @@ mod test {
     fn test_tokens_until() {
         assert_eq!(tokens_until(
             vec![
-                Token::Keyword("static".to_string()),
-                Token::Keyword("int".to_string()),
+                Token::Keyword(Keyword::Static),
+                Token::Keyword(Keyword::Int),
                 Token::Identifier("a".to_string()),
                 Token::Symbol(",".to_string()),
                 Token::Symbol("b".to_string()),
@@ -329,7 +329,7 @@ mod test {
         assert_eq!(balance_symbol(
             vec![
                 Token::Symbol("{".to_string()),
-                Token::Keyword("do".to_string()),
+                Token::Keyword(Keyword::Do),
                 Token::Identifier("blargh".to_string()),
                 Token::Symbol("(".to_string()),
                 Token::Symbol(")".to_string()),
@@ -347,7 +347,7 @@ mod test {
             vec![
                 Token::Symbol("{".to_string()),
                 Token::Symbol("{".to_string()),
-                Token::Keyword("return".to_string()),
+                Token::Keyword(Keyword::Return),
                 Token::IntegerConstant("1".to_string()),
                 Token::Symbol(";".to_string()),
                 Token::Symbol("}".to_string()),
@@ -361,11 +361,11 @@ mod test {
     #[test]
     fn test_parse_outer() {
         let input = vec![
-            Token::Keyword("class".to_string()),
+            Token::Keyword(Keyword::Class),
             Token::Identifier("Foo".to_string()),
             Token::Symbol("{".to_string()),
-            Token::Keyword("static".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Static),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("blargh".to_string()),
             Token::Symbol(";".to_string()),
             Token::Symbol("}".to_string()),
@@ -376,7 +376,7 @@ mod test {
     #[test]
     fn test_parse_outer_errors() {
         let bad_input = vec![
-            Token::Keyword("class".to_string()),
+            Token::Keyword(Keyword::Class),
             Token::Symbol("{".to_string()),
             Token::Symbol("}".to_string()),
         ];
@@ -386,8 +386,8 @@ mod test {
         }
 
         let more_bad_input = vec![
-            Token::Keyword("var".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Var),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("foo".to_string()),
             Token::Symbol(";".to_string()),
         ];
@@ -400,8 +400,8 @@ mod test {
     #[test]
     fn test_parse_class_var() {
         let input = vec![
-            Token::Keyword("static".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Static),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("foo".to_string()),
         ];
         assert_eq!(parse_class_var(&input).unwrap(), ClassVar {
@@ -413,7 +413,7 @@ mod test {
         });
 
         let multiple_declarations = vec![
-            Token::Keyword("field".to_string()),
+            Token::Keyword(Keyword::Field),
             Token::Identifier("MyCustomClass".to_string()),
             Token::Identifier("foo".to_string()),
             Token::Symbol(",".to_string()),
@@ -434,7 +434,7 @@ mod test {
         assert_eq!(parse_params(&vec![]).unwrap(), vec![]);
 
         let one_param = vec![
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
         ];
         assert_eq!(
@@ -443,13 +443,13 @@ mod test {
         );
 
         let three_params = vec![
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
             Token::Symbol(",".to_string()),
             Token::Identifier("Blargh".to_string()),
             Token::Identifier("y1".to_string()),
             Token::Symbol(",".to_string()),
-            Token::Keyword("char".to_string()),
+            Token::Keyword(Keyword::Char),
             Token::Identifier("y2".to_string()),
         ];
         assert_eq!(
@@ -468,7 +468,7 @@ mod test {
         assert!(parse_params(missing_identifier).is_err());
 
         let wrong_symbol = vec![
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
             Token::Symbol(";".to_string()),
             Token::Identifier("Blargh".to_string()),
