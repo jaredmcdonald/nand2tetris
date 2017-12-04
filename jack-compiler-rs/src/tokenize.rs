@@ -123,7 +123,7 @@ lazy_static! {
     static ref STRING_TO_KEYWORD: HashMap<String, Keyword> = {
         let mut map = HashMap::new();
         for (s, k) in get_keyword_pairs() {
-            map.insert(s, k);
+            map.insert(s.to_string(), k);
         }
         map
     };
@@ -131,75 +131,75 @@ lazy_static! {
     static ref KEYWORD_TO_STRING: HashMap<Keyword, String> = {
         let mut map = HashMap::new();
         for (s, k) in get_keyword_pairs() {
-            map.insert(k, s);
+            map.insert(k, s.to_string());
         }
         map
     };
 
     static ref STRING_TO_SYMBOL: HashMap<String, Symbol> = {
         let mut map = HashMap::new();
-        for (s, k) in get_symbol_pairs() {
-            map.insert(s, k);
+        for (string, sym) in get_symbol_pairs() {
+            map.insert(string.to_string(), sym);
         }
         map
     };
 
     static ref SYMBOL_TO_STRING: HashMap<Symbol, String> = {
         let mut map = HashMap::new();
-        for (s, k) in get_symbol_pairs() {
-            map.insert(k, s);
+        for (string, sym) in get_symbol_pairs() {
+            map.insert(sym, string.to_string());
         }
         map
     };
 }
 
-fn get_symbol_pairs() -> Vec<(String, Symbol)> {
+fn get_symbol_pairs() -> Vec<(&'static str, Symbol)> {
     vec![
-        ("[".to_string(), Symbol::OpenSquare),
-        ("]".to_string(), Symbol::CloseSquare),
-        ("{".to_string(), Symbol::OpenCurly),
-        ("}".to_string(), Symbol::CloseCurly),
-        ("(".to_string(), Symbol::OpenParen),
-        (")".to_string(), Symbol::CloseParen),
-        (".".to_string(), Symbol::Period),
-        (",".to_string(), Symbol::Comma),
-        (";".to_string(), Symbol::Semi),
-        ("+".to_string(), Symbol::Plus),
-        ("-".to_string(), Symbol::Minus),
-        ("*".to_string(), Symbol::Mult),
-        ("/".to_string(), Symbol::Div),
-        ("&".to_string(), Symbol::Amp),
-        ("|".to_string(), Symbol::Pipe),
-        ("<".to_string(), Symbol::Lt),
-        (">".to_string(), Symbol::Gt),
-        ("=".to_string(), Symbol::Eq),
-        ("~".to_string(), Symbol::Not),
+        ("[", Symbol::OpenSquare),
+        ("]", Symbol::CloseSquare),
+        ("{", Symbol::OpenCurly),
+        ("}", Symbol::CloseCurly),
+        ("(", Symbol::OpenParen),
+        (")", Symbol::CloseParen),
+        (".", Symbol::Period),
+        (",", Symbol::Comma),
+        (";", Symbol::Semi),
+        ("+", Symbol::Plus),
+        ("-", Symbol::Minus),
+        ("*", Symbol::Mult),
+        ("/", Symbol::Div),
+        ("&", Symbol::Amp),
+        ("|", Symbol::Pipe),
+        ("<", Symbol::Lt),
+        (">", Symbol::Gt),
+        ("=", Symbol::Eq),
+        ("~", Symbol::Not),
     ]
 }
 
-fn get_keyword_pairs() -> Vec<(String, Keyword)> {
+fn get_keyword_pairs() -> Vec<(&'static str, Keyword)> {
     vec![
-        ("class".to_string(), Keyword::Class),
-        ("constructor".to_string(), Keyword::Constructor),
-        ("function".to_string(), Keyword::Function),
-        ("method".to_string(), Keyword::Method),
-        ("field".to_string(), Keyword::Field),
-        ("static".to_string(), Keyword::Static),
-        ("var".to_string(), Keyword::Var),
-        ("int".to_string(), Keyword::Int),
-        ("char".to_string(), Keyword::Char),
-        ("boolean".to_string(), Keyword::Boolean),
-        ("void".to_string(), Keyword::Void),
-        ("true".to_string(), Keyword::True),
-        ("false".to_string(), Keyword::False),
-        ("null".to_string(), Keyword::Null),
-        ("this".to_string(), Keyword::This),
-        ("let".to_string(), Keyword::Let),
-        ("do".to_string(), Keyword::Do),
-        ("if".to_string(), Keyword::If),
-        ("else".to_string(), Keyword::Else),
-        ("while".to_string(), Keyword::While),
-        ("return".to_string(), Keyword::Return),
+        ("class", Keyword::Class),
+        ("constructor", Keyword::Constructor),
+        ("function", Keyword::Function),
+        ("method", Keyword::Method),
+        ("field", Keyword::Field),
+        ("static", Keyword::Static),
+        ("var", Keyword::Var),
+        ("int", Keyword::Int),
+        ("char", Keyword::Char),
+        ("boolean", Keyword::Boolean),
+        ("void", Keyword::Void),
+        ("true", Keyword::True),
+        ("false", Keyword::False),
+        ("null", Keyword::Null),
+        ("this", Keyword::This),
+        ("let", Keyword::Let),
+        ("do", Keyword::Do),
+        ("if", Keyword::If),
+        ("else", Keyword::Else),
+        ("while", Keyword::While),
+        ("return", Keyword::Return),
     ]
 }
 
