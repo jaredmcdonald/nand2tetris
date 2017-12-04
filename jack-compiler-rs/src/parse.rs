@@ -36,11 +36,14 @@ impl fmt::Display for Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TokenError {
-    InvalidTokenError,
+    InvalidTokenError(String),
+    InvalidIdentifierError(String),
+    IntTooBigError(u16),
     RegexError(regex::Error),
     ParseIntError(ParseIntError),
+    Unknown,
 }
 
 impl From<regex::Error> for TokenError {
@@ -81,8 +84,10 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
                     false|null|this|let|do|if|else|while|return)|
         (?P<symbol>[\\{\\}}\\(\\)\\[\\]\\.,;\\+\\-\\*/&\\|<>=~])|
         \"(?P<string>[^\"]*)\"|
-        (?P<identifier>[A-Za-z_]{1}[A-Za-z0-9_]*)|
-        (?P<integer>[0-9]+)",
+        (?P<identifier>[[:alpha:]_]{1}[[:alnum:]_]*)|
+        (?P<invalid_identifier>[[:digit:]]+[[:alpha:]_]+[[:alnum:]_]*)|
+        (?P<integer>[[:digit:]]+)|
+        (?P<unknown>[^\\s]+)",
     )?;
 
     let tokenized = tokenize_regex.captures_iter(&strip_comments(input)?).map(|capture| {
@@ -97,10 +102,19 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
         } else if let Some(mat) = capture.name("integer") {
             // attempt to parse it into a u16; if it doesn't parse, it's likely too big
             let parsed = mat.as_str().parse::<u16>()?;
-            // then cajole back to a string
-            Ok(Token::IntegerConstant(format!("{}", parsed)))
+            // it actually has to fit into 15 bits per our specification
+            if parsed < 0b111111111111111 {
+                // it's fine, cajole back to a string
+                Ok(Token::IntegerConstant(format!("{}", parsed)))
+            } else {
+                Err(TokenError::IntTooBigError(parsed))
+            }
+        } else if let Some(mat) = capture.name("invalid_identifier") {
+            Err(TokenError::InvalidIdentifierError(mat.as_str().to_string()))
+        } else if let Some(mat) = capture.name("unknown") {
+            Err(TokenError::InvalidTokenError(mat.as_str().to_string()))
         } else {
-            Err(TokenError::InvalidTokenError)
+            Err(TokenError::Unknown)
         }
     }).collect::<Result<Vec<Token>, TokenError>>()?;
 
@@ -129,6 +143,29 @@ mod test {
         );
 
         assert_eq!(tokenize("var int i, j;").unwrap().len(), 6);
+    }
+
+    #[test]
+    fn test_tokenize_errors() {
+        match tokenize("let i = 3 % 5;") {
+            Err(e) => assert_eq!(e, TokenError::InvalidTokenError("%".to_string())),
+            _ => panic!("should have been an err"),
+        };
+
+        match tokenize("let i = 65536;") {
+            Err(TokenError::ParseIntError(_)) => assert!(true),
+            _ => panic!("should have been a ParseIntError"),
+        };
+
+        match tokenize("let i = 45000;") {
+            Err(TokenError::IntTooBigError(i)) => assert_eq!(i, 45000),
+            _ => panic!("should have been an err"),
+        };
+
+        match tokenize("let 11_blargh = 2;") {
+            Err(TokenError::InvalidIdentifierError(id)) => assert_eq!(id, "11_blargh"),
+            _ => panic!("should have been an err"),
+        }
     }
 
     #[test]
