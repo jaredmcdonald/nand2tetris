@@ -59,7 +59,7 @@ fn strip_comments(input: &str) -> Result<String, regex::Error> {
     // match string first, then comments, to make sure we don't
     // remove pieces of strings that look like comments
     // h/t https://stackoverflow.com/questions/2319019/using-regex-to-remove-comments-from-source-files/18381470#18381470
-    let comment_regex = Regex::new("(?xs)
+    let comment_regex = Regex::new("(?xs) # `s` flag tells `.` to match newlines
         (?P<string>\"[^\"]*\")| # string
         (/\\*.*?\\*/)|          # multiline comment
         (//[^\\n]*)             # line comment
