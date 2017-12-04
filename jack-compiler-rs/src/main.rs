@@ -1,12 +1,12 @@
 extern crate regex;
 
-mod parse;
+mod tokenize;
 
 use std::env::args;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, BufReader};
-use parse::{tokenize, TokenError};
+use tokenize::{tokenize, TokenError};
 
 #[derive(Debug)]
 enum CliError {
