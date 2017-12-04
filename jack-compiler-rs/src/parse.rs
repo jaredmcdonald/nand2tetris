@@ -20,11 +20,21 @@ pub struct Param {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Statement {}
+
+#[derive(Debug, PartialEq)]
+pub struct SubroutineBody {
+    var_declarations: Vec<Var>,
+    statements: Vec<Statement>,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Subroutine {
     subroutine_type: SubroutineType,
     return_type: SubroutineReturnType,
     params: Vec<Param>,
     name: String,
+    body: SubroutineBody,
 }
 
 #[derive(Debug, PartialEq)]
@@ -44,6 +54,11 @@ pub enum Type {
 #[derive(Debug, PartialEq)]
 pub struct ClassVar {
     var_type: ClassVarType,
+    var: Var,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Var {
     data_type: Type,
     names: Vec<String>, // can declare more than one at once, e.g. `static int x, y;`
 }
@@ -142,7 +157,7 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
         }
     }
 
-    Ok(ClassVar { var_type, data_type, names })
+    Ok(ClassVar { var_type, var: Var { data_type, names }})
 }
 
 fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
@@ -174,6 +189,23 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
     Ok(params_list)
 }
 
+fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
+    Err(ParseError { message: "argh".to_string() })
+}
+
+fn parse_subroutine_body(body: &[Token]) -> Result<SubroutineBody, ParseError> {
+    let mut parse_index = 0;
+    let mut var_declarations = vec![];
+    while parse_index < body.len() {
+        if body[parse_index] == Token::Keyword("var".to_string()) {
+            let declaration_end = tokens_until(&body[parse_index..], Token::Symbol(";".to_string()))?;
+            var_declarations.push(parse_var(&body[parse_index..parse_index + declaration_end]));
+            parse_index = parse_index + declaration_end + 1;
+        }
+    }
+    Err(ParseError {message: "unimplemented!".to_string()})
+}
+
 fn parse_subroutine(
     subroutine_type_token: &Token,
     return_type_token: &Token,
@@ -201,14 +233,16 @@ fn parse_subroutine(
         SubroutineReturnType::Type(parse_type(&subroutine_type_token)?)
     };
 
-    let params = parse_params(params_body)?;
     let name = parse_identifier(name_token)?;
+    let params = parse_params(params_body)?;
+    let body = parse_subroutine_body(subroutine_body)?;
 
     Ok(Subroutine {
         subroutine_type,
         return_type,
         params,
         name,
+        body,
     })
 }
 
@@ -372,8 +406,10 @@ mod test {
         ];
         assert_eq!(parse_class_var(&input).unwrap(), ClassVar {
             var_type: ClassVarType::Static,
-            data_type: Type::Int,
-            names: vec!["foo".to_string()],
+            var: Var {
+                data_type: Type::Int,
+                names: vec!["foo".to_string()],
+            },
         });
 
         let multiple_declarations = vec![
@@ -385,8 +421,10 @@ mod test {
         ];
         assert_eq!(parse_class_var(&multiple_declarations).unwrap(), ClassVar {
             var_type: ClassVarType::Field,
-            data_type: Type::Class("MyCustomClass".to_string()),
-            names: vec!["foo".to_string(), "bar".to_string()],
+            var: Var {
+                data_type: Type::Class("MyCustomClass".to_string()),
+                names: vec!["foo".to_string(), "bar".to_string()],
+            },
         });
     }
 
