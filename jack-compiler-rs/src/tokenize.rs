@@ -1,14 +1,116 @@
+use std::convert::TryInto;
 use std::fmt;
 use std::num::ParseIntError;
+use std::collections::HashMap;
 use regex::{Regex, Captures, self};
 
 #[derive(Debug, PartialEq)]
+pub enum TokenError {
+    KeywordError(KeywordError),
+    InvalidTokenError(String),
+    InvalidIdentifierError(String),
+    IntTooBigError(u16),
+    RegexError(regex::Error),
+    ParseIntError(ParseIntError),
+    Unknown,
+}
+
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
+pub enum Keyword {
+    Class,
+    Constructor,
+    Function,
+    Method,
+    Field,
+    Static,
+    Var,
+    Int,
+    Char,
+    Boolean,
+    Void,
+    True,
+    False,
+    Null,
+    This,
+    Let,
+    Do,
+    If,
+    Else,
+    While,
+    Return,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct KeywordError {}
+
+impl TryInto<Keyword> for String {
+    type Error = KeywordError;
+
+    fn try_into(self) -> Result<Keyword, Self::Error> {
+        if let Some(kw) = str_to_keyword().get(&self) {
+            Ok(*kw)
+        } else {
+            Err(Self::Error {})
+        }
+    }
+}
+
+impl fmt::Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let map = keyword_to_str();
+        write!(f, "{}", map.get(self).unwrap())
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Token {
-    Keyword(String),
+    Keyword(Keyword),
     Symbol(String),
     Identifier(String),
     StringConstant(String),
     IntegerConstant(String),
+}
+
+fn str_to_keyword() -> HashMap<String, Keyword> {
+    let mut map = HashMap::new();
+    for (s, k) in get_keyword_pairs() {
+        map.insert(s, k);
+    }
+    map
+}
+
+fn keyword_to_str() -> HashMap<Keyword, String> {
+    let mut map = HashMap::new();
+    for (s, k) in get_keyword_pairs() {
+        map.insert(k, s);
+    }
+    map
+}
+
+fn get_keyword_pairs() -> Vec<(String, Keyword)> {
+    vec![
+        ("class".to_string(), Keyword::Class),
+        ("constructor".to_string(), Keyword::Constructor),
+        ("function".to_string(), Keyword::Function),
+        ("method".to_string(), Keyword::Method),
+        ("field".to_string(), Keyword::Field),
+        ("static".to_string(), Keyword::Static),
+        ("var".to_string(), Keyword::Var),
+        ("int".to_string(), Keyword::Int),
+        ("char".to_string(), Keyword::Char),
+        ("boolean".to_string(), Keyword::Boolean),
+        ("void".to_string(), Keyword::Void),
+        ("true".to_string(), Keyword::True),
+        ("false".to_string(), Keyword::False),
+        ("null".to_string(), Keyword::Null),
+        ("this".to_string(), Keyword::This),
+        ("let".to_string(), Keyword::Let),
+        ("do".to_string(), Keyword::Do),
+        ("if".to_string(), Keyword::If),
+        ("else".to_string(), Keyword::Else),
+        ("while".to_string(), Keyword::While),
+        ("return".to_string(), Keyword::Return),
+    ]
 }
 
 // XML formatting for the book's tokenization test cases
@@ -36,19 +138,15 @@ impl fmt::Display for Token {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum TokenError {
-    InvalidTokenError(String),
-    InvalidIdentifierError(String),
-    IntTooBigError(u16),
-    RegexError(regex::Error),
-    ParseIntError(ParseIntError),
-    Unknown,
-}
-
 impl From<regex::Error> for TokenError {
     fn from(error: regex::Error) -> Self {
         TokenError::RegexError(error)
+    }
+}
+
+impl From<KeywordError> for TokenError {
+    fn from(error: KeywordError) -> Self {
+        TokenError::KeywordError(error)
     }
 }
 
@@ -90,9 +188,11 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
         (?P<unknown>[^\\s]+)",
     )?;
 
-    let tokenized = tokenize_regex.captures_iter(&strip_comments(input)?).map(|capture| {
+    let comment_stripped = strip_comments(input)?;
+
+    let tokenized = tokenize_regex.captures_iter(&comment_stripped).map(|capture| {
         if let Some(mat) = capture.name("keyword") {
-            Ok(Token::Keyword(mat.as_str().to_string()))
+            Ok(Token::Keyword(mat.as_str().to_string().try_into()?))
         } else if let Some(mat) = capture.name("symbol") {
             Ok(Token::Symbol(mat.as_str().to_string()))
         } else if let Some(mat) = capture.name("string") {
