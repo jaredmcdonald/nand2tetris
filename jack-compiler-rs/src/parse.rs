@@ -262,5 +262,18 @@ mod test {
             data_type: Type::Int,
             names: vec!["foo".to_string()],
         });
+
+        let multiple_declarations = vec![
+            Token::Keyword("field".to_string()),
+            Token::Identifier("MyCustomClass".to_string()),
+            Token::Identifier("foo".to_string()),
+            Token::Symbol(",".to_string()),
+            Token::Identifier("bar".to_string()),
+        ];
+        assert_eq!(parse_class_var(&multiple_declarations).unwrap(), ClassVar {
+            var_type: ClassVarType::Field,
+            data_type: Type::Class("MyCustomClass".to_string()),
+            names: vec!["foo".to_string(), "bar".to_string()],
+        });
     }
 }
