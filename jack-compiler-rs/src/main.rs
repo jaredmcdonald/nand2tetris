@@ -1,6 +1,7 @@
 extern crate regex;
 
 mod tokenize;
+mod parse;
 
 use std::env::args;
 use std::fs::File;
