@@ -1,124 +1,110 @@
-use std::collections::HashMap;
-use regex::{Regex, self};
+use std::fmt;
+use std::num::ParseIntError;
+use regex::{Regex, Captures, self};
 
+#[derive(Debug)]
 pub enum Token {
-    Keyword(Keyword),
-    Unknown(String),
+    Keyword(String),
+    Symbol(String),
+    Identifier(String),
+    StringConstant(String),
+    IntegerConstant(String),
 }
 
-#[derive(Debug)]
-pub enum Keyword {
-    Class,
-    Constructor,
-    Function,
-    Method,
-    Field,
-    Static,
-    Var,
-    Int,
-    Char,
-    Boolean,
-    Void,
-    True,
-    False,
-    Null,
-    This,
-    Let,
-    Do,
-    If,
-    Else,
-    While,
-    Return,
-}
-
-#[derive(Debug)]
-pub enum Symbol {
-    OpenCurly,
-    CloseCurly,
-    OpenParen,
-    CloseParen,
-    OpenSquare,
-    CloseSquare,
-    Dot,
-    Comma,
-    Semicolon,
-    Plus,
-    Minus,
-    Asterisk,
-    Slash,
-    Ampersand,
-    Pipe,
-    Lt,
-    Gt,
-    Equals,
-    Tilde,
-}
-
-fn generate_keyword_map() -> HashMap<String, Keyword> {
-    let mut keywords = HashMap::new();
-    keywords.insert("class".to_string(), Keyword::Class);
-    keywords.insert("constructor".to_string(), Keyword::Constructor);
-    keywords.insert("function".to_string(), Keyword::Function);
-    keywords.insert("method".to_string(), Keyword::Method);
-    keywords.insert("field".to_string(), Keyword::Field);
-    keywords.insert("static".to_string(), Keyword::Static);
-    keywords.insert("var".to_string(), Keyword::Var);
-    keywords.insert("int".to_string(), Keyword::Int);
-    keywords.insert("char".to_string(), Keyword::Char);
-    keywords.insert("boolean".to_string(), Keyword::Boolean);
-    keywords.insert("void".to_string(), Keyword::Void);
-    keywords.insert("true".to_string(), Keyword::True);
-    keywords.insert("false".to_string(), Keyword::False);
-    keywords.insert("null".to_string(), Keyword::Null);
-    keywords.insert("this".to_string(), Keyword::This);
-    keywords.insert("let".to_string(), Keyword::Let);
-    keywords.insert("do".to_string(), Keyword::Do);
-    keywords.insert("if".to_string(), Keyword::If);
-    keywords.insert("else".to_string(), Keyword::Else);
-    keywords.insert("while".to_string(), Keyword::While);
-    keywords.insert("return".to_string(), Keyword::Return);
-    keywords
-}
-
-fn generate_symbol_map() -> HashMap<String, Symbol> {
-    let mut symbols = HashMap::new();
-    symbols.insert("\\{".to_string(), Symbol::OpenCurly);
-    symbols.insert("\\}".to_string(), Symbol::CloseCurly);
-    symbols.insert("\\(".to_string(), Symbol::OpenParen);
-    symbols.insert("\\)".to_string(), Symbol::CloseParen);
-    symbols.insert("\\[".to_string(), Symbol::OpenSquare);
-    symbols.insert("\\]".to_string(), Symbol::CloseSquare);
-    symbols.insert("\\.".to_string(), Symbol::Dot);
-    symbols.insert(",".to_string(), Symbol::Comma);
-    symbols.insert(";".to_string(), Symbol::Semicolon);
-    symbols.insert("\\+".to_string(), Symbol::Plus);
-    symbols.insert("\\-".to_string(), Symbol::Minus);
-    symbols.insert("\\*".to_string(), Symbol::Asterisk);
-    symbols.insert("/".to_string(), Symbol::Slash);
-    symbols.insert("&".to_string(), Symbol::Ampersand);
-    symbols.insert("\\|".to_string(), Symbol::Pipe);
-    symbols.insert("<".to_string(), Symbol::Lt);
-    symbols.insert(">".to_string(), Symbol::Gt);
-    symbols.insert("=".to_string(), Symbol::Equals);
-    symbols.insert("~".to_string(), Symbol::Tilde);
-    symbols
-}
-
-fn tokenize(input: &str) -> Result<Vec<Token>, regex::Error> {
-    let keywords = generate_keyword_map();
-    let symbols = generate_symbol_map();
-    let keywords_re = keywords.keys().map(|s| s.to_string()).collect::<Vec<String>>().join("|");
-    let symbols_re = symbols.keys().map(|s| s.to_string()).collect::<Vec<String>>().join("|");
-    let identifier_re = "[A-Za-z0-9_]+"; // todo how to invalidate leading digits in the regex?
-    let int_re = "[0-9]+";
-    let string_re = "\"[^\"]*\"";
-    let tokenize_regex = Regex::new(format!(r"({}|{}|{}|{}|{})", keywords_re, symbols_re, int_re, string_re, identifier_re).as_ref())?;
-
-    for mat in tokenize_regex.find_iter(input) {
-        println!("{}", mat.as_str());
+// XML formatting for the book's tokenization test cases
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let (label, value) = match self {
+            &Token::Keyword(ref v) => ("keyword", v.to_string()),
+            &Token::Symbol(ref v) => ("symbol", {
+                // need to escape some symbols for xml 🙄
+                if v == "<" {
+                    "&lt;".to_string()
+                } else if v == ">" {
+                    "&gt;".to_string()
+                } else if v == "&" {
+                    "&amp;".to_string()
+                } else {
+                    v.to_string()
+                }
+            }),
+            &Token::Identifier(ref v) => ("identifier", v.to_string()),
+            &Token::StringConstant(ref v) => ("stringConstant", v.to_string()),
+            &Token::IntegerConstant(ref v) => ("integerConstant", v.to_string()),
+        };
+        write!(f, "<{0}>{1}</{0}>", label, value)
     }
+}
 
-    Ok(vec![]) // todo
+#[derive(Debug)]
+pub enum TokenError {
+    InvalidTokenError,
+    RegexError(regex::Error),
+    ParseIntError(ParseIntError),
+}
+
+impl From<regex::Error> for TokenError {
+    fn from(error: regex::Error) -> Self {
+        TokenError::RegexError(error)
+    }
+}
+
+impl From<ParseIntError> for TokenError {
+    fn from(error: ParseIntError) -> Self {
+        TokenError::ParseIntError(error)
+    }
+}
+
+fn strip_comments(input: &str) -> Result<String, regex::Error> {
+    // match string first, then comments, to make sure we don't
+    // remove pieces of strings that look like comments
+    // h/t https://stackoverflow.com/questions/2319019/using-regex-to-remove-comments-from-source-files/18381470#18381470
+    let comment_regex = Regex::new("(?xs)
+        (?P<string>\"[^\"]*\")| # string
+        (/\\*.*?\\*/)|          # multiline comment
+        (//[^\\n]*)             # line comment
+    ")?;
+
+    // https://doc.rust-lang.org/regex/regex/struct.Regex.html#method.replace
+    Ok(comment_regex.replace_all(input, |caps: &Captures| {
+        if let Some(mat) = caps.name("string") {
+            mat.as_str().to_string() // in a string, don't replace
+        } else {
+            "".to_string()           // comment! replace with empty string
+        }
+    }).to_string())
+}
+
+pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
+    let tokenize_regex = Regex::new("(?x) # <-- ignore whitespace and comments (beginning w/ '#')
+        (?P<keyword>class|constructor|function|method|field|static|var|int|char|boolean|void|true|
+                    false|null|this|let|do|if|else|while|return)|
+        (?P<symbol>[\\{\\}}\\(\\)\\[\\]\\.,;\\+\\-\\*/&\\|<>=~])|
+        \"(?P<string>[^\"]*)\"|
+        (?P<identifier>[A-Za-z_]{1}[A-Za-z0-9_]*)|
+        (?P<integer>[0-9]+)",
+    )?;
+
+    let tokenized = tokenize_regex.captures_iter(&strip_comments(input)?).map(|capture| {
+        if let Some(mat) = capture.name("keyword") {
+            Ok(Token::Keyword(mat.as_str().to_string()))
+        } else if let Some(mat) = capture.name("symbol") {
+            Ok(Token::Symbol(mat.as_str().to_string()))
+        } else if let Some(mat) = capture.name("string") {
+            Ok(Token::StringConstant(mat.as_str().to_string()))
+        } else if let Some(mat) = capture.name("identifier") {
+            Ok(Token::Identifier(mat.as_str().to_string()))
+        } else if let Some(mat) = capture.name("integer") {
+            // attempt to parse it into a u16; if it doesn't parse, it's likely too big
+            let parsed = mat.as_str().parse::<u16>()?;
+            // then cajole back to a string
+            Ok(Token::IntegerConstant(format!("{}", parsed)))
+        } else {
+            Err(TokenError::InvalidTokenError)
+        }
+    }).collect::<Result<Vec<Token>, TokenError>>()?;
+
+    Ok(tokenized)
 }
 
 #[cfg(test)]
@@ -126,7 +112,29 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_strip_comments() {
+        assert_eq!(strip_comments("hi // blargh\n").unwrap(), "hi \n");
+        assert_eq!(strip_comments("hi /* blargh\n */ hi").unwrap(), "hi  hi");
+        assert_eq!(strip_comments("\"/* hi */\"").unwrap(), "\"/* hi */\"");
+        assert_eq!(strip_comments("/* // hi */hey").unwrap(), "hey");
+        assert_eq!(strip_comments("/* \"this is a comment\" */\"but this is not\"").unwrap(), "\"but this is not\"");
+        assert_eq!(strip_comments("/*hi*/Hello/*hi again*///sup\n").unwrap(), "Hello\n")
+    }
+
+    #[test]
     fn test_tokenize() {
-        let tokenized = tokenize("class Foo { function blargh1() { return \"blargh\"; }}").unwrap();
+        assert_eq!(
+            tokenize("class Foo { function void blargh1() { return \"blargh\"; }}").unwrap().len(),
+            14
+        );
+
+        assert_eq!(tokenize("var int i, j;").unwrap().len(), 6);
+    }
+
+    #[test]
+    fn test_tokenize_with_comments() {
+        let tokenized = tokenize("/**\n* hi */class Foo { // a class
+            function void blargh1() { /* yeah \"lol\" */ return \"blargh\"; }}").unwrap();
+        assert_eq!(tokenized.len(), 14);
     }
 }
