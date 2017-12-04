@@ -1,7 +1,31 @@
 use tokenize::Token;
 
 #[derive(Debug, PartialEq)]
-pub struct Subroutine {}
+pub enum SubroutineType {
+    Constructor,
+    Function,
+    Method,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SubroutineReturnType {
+    Void,
+    Type(Type),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Param {
+    param_type: Type,
+    name: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Subroutine {
+    subroutine_type: SubroutineType,
+    return_type: SubroutineReturnType,
+    params: Vec<Param>,
+    name: String,
+}
 
 #[derive(Debug, PartialEq)]
 pub enum ClassVarType {
@@ -72,6 +96,27 @@ fn balance_symbol(tokens: &[Token], open: &str, close: &str) -> Result<usize, Pa
     })
 }
 
+fn parse_type(token: &Token) -> Result<Type, ParseError> {
+    match token {
+        &Token::Keyword(ref kw) => match kw.as_ref() {
+            "int" => Ok(Type::Int),
+            "char" => Ok(Type::Char),
+            "boolean" => Ok(Type::Boolean),
+            _ => Err(ParseError { message: format!("expected a type, got keyword {:?}", kw) }),
+        },
+        &Token::Identifier(ref id) => Ok(Type::Class(id.to_string())),
+        _ => Err(ParseError { message: format!("expected a type, got token {:?}", token) }),
+    }
+}
+
+fn parse_identifier(token: &Token) -> Result<String, ParseError> {
+    if let &Token::Identifier(ref id) = token {
+        Ok(id.to_string())
+    } else {
+        Err(ParseError { message: format!("expected identifier, found {:?}", token) })
+    }
+}
+
 fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
     let var_type = match body[0] {
         Token::Keyword(ref kw) => match kw.as_ref() {
@@ -81,16 +126,8 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
         },
         _ => return Err(ParseError { message: format!("unexpected token in class var declaration: {:?}", body[0]) }),
     };
-    let data_type = match body[1] {
-        Token::Keyword(ref kw) => match kw.as_ref() {
-            "int" => Type::Int,
-            "char" => Type::Char,
-            "boolean" => Type::Boolean,
-            _ => return Err(ParseError { message: format!("expected a type for class var, got keyword {:?}", kw) }),
-        },
-        Token::Identifier(ref id) => Type::Class(id.to_string()),
-        _ => return Err(ParseError { message: format!("expected a type for class var, got {:?}", body[1]) }),
-    };
+
+    let data_type = parse_type(&body[1])?;
 
     let mut names = vec![];
     for (index, token) in body[2..].iter().enumerate() {
@@ -101,18 +138,77 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
                 return Err(ParseError { message: format!("expected `,`, found {:?}", token) });
             }
         } else {
-            if let &Token::Identifier(ref id) = token {
-                names.push(id.to_string());
-            } else {
-                return Err(ParseError { message: format!("expected identifier, found {:?}", token) });
-            }
+            names.push(parse_identifier(&token)?);
         }
     }
 
-    Ok(ClassVar {
-        var_type,
-        data_type,
-        names,
+    Ok(ClassVar { var_type, data_type, names })
+}
+
+fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
+    let mut i = 0;
+    let mut params_list = vec![];
+    let len = tokens.len();
+    let err = ParseError { message: format!("malformed param list: {:?}", tokens) };
+    while i < len { // this is just terrible
+        if len - i < 2 {
+            return Err(err); // too few tokens
+        }
+
+        let param_type = parse_type(&tokens[i])?;
+        let name = parse_identifier(&tokens[i + 1])?;
+        params_list.push(Param { param_type, name });
+
+        if len - i == 2 {
+            break; // done!
+        } else if tokens[i + 2] == Token::Symbol(",".to_string()) {
+            if len > i + 3 {
+                i += 3; // advance the loop
+            } else {
+                return Err(err);
+            }
+        } else {
+            return Err(err);
+        }
+    }
+    Ok(params_list)
+}
+
+fn parse_subroutine(
+    subroutine_type_token: &Token,
+    return_type_token: &Token,
+    name_token: &Token,
+    params_body: &[Token],
+    subroutine_body: &[Token],
+) -> Result<Subroutine, ParseError> {
+    let subroutine_type_err = ParseError {
+        message: format!("expected `constructor`, `function` or `method`, got {:?}", subroutine_type_token),
+    };
+    let subroutine_type = if let &Token::Keyword(ref kw) = subroutine_type_token {
+        match kw.as_ref() {
+            "function" => SubroutineType::Function,
+            "constructor" => SubroutineType::Constructor,
+            "method" => SubroutineType::Method,
+            _ => return Err(subroutine_type_err),
+        }
+    } else {
+        return Err(subroutine_type_err);
+    };
+
+    let return_type = if return_type_token == &Token::Keyword("void".to_string()) {
+        SubroutineReturnType::Void
+    } else {
+        SubroutineReturnType::Type(parse_type(&subroutine_type_token)?)
+    };
+
+    let params = parse_params(params_body)?;
+    let name = parse_identifier(name_token)?;
+
+    Ok(Subroutine {
+        subroutine_type,
+        return_type,
+        params,
+        name,
     })
 }
 
@@ -126,6 +222,23 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
                 let end_index = tokens_until(&body[current_token_index..], Token::Symbol(";".to_string()))?;
                 class_vars.push(parse_class_var(&body[current_token_index..current_token_index + end_index])?);
                 current_token_index = end_index + 1;
+            } else if keyword ==  "constructor" || keyword == "function" || keyword == "method" {
+                let subroutine_type = &body[current_token_index + 1];
+                let return_type = &body[current_token_index + 2];
+                let name = &body[current_token_index + 3];
+                let params_start = current_token_index + 4;
+                let params_end = tokens_until(&body[params_start..], Token::Symbol(")".to_string()))?;
+                let body_start = params_end + 1;
+                let body_end = balance_symbol(&body[body_start..], "{", "}")?;
+                subroutines.push(
+                    parse_subroutine(
+                        &subroutine_type,
+                        &return_type,
+                        &name,
+                        &body[params_start + 1..params_end],
+                        &body[body_start + 1..body_end]
+                    )?
+                )
             } else {
                 return Err(ParseError {
                     message: format!("unexpected keyword in class body: {}", keyword),
@@ -147,7 +260,7 @@ pub fn parse_outer(tokens: &[Token]) -> Result<Class, ParseError> {
             Ok(parse_class(&classname, &tokens[3..body_end + 2])?)
         } else {
             Err(ParseError {
-                message: format!("expected a classname identifier after `class`, got {:?}", tokens[1]),
+                message: format!("expected an identifier after `class`, got {:?}", tokens[1]),
             })
         }
     } else {
@@ -234,7 +347,7 @@ mod test {
             Token::Symbol("}".to_string()),
         ];
         match parse_outer(&bad_input) {
-            Err(e) => assert!(e.message.starts_with("expected a classname identifier after `class`")),
+            Err(e) => assert!(e.message.starts_with("expected an identifier after `class`")),
             _ => panic!("should have been an error"),
         }
 
@@ -275,5 +388,54 @@ mod test {
             data_type: Type::Class("MyCustomClass".to_string()),
             names: vec!["foo".to_string(), "bar".to_string()],
         });
+    }
+
+    #[test]
+    fn test_parse_params() {
+        // empty
+        assert_eq!(parse_params(&vec![]).unwrap(), vec![]);
+
+        let one_param = vec![
+            Token::Keyword("int".to_string()),
+            Token::Identifier("x".to_string()),
+        ];
+        assert_eq!(
+            parse_params(&one_param).unwrap(),
+            vec![Param { param_type: Type::Int, name: "x".to_string() }]
+        );
+
+        let three_params = vec![
+            Token::Keyword("int".to_string()),
+            Token::Identifier("x".to_string()),
+            Token::Symbol(",".to_string()),
+            Token::Identifier("Blargh".to_string()),
+            Token::Identifier("y1".to_string()),
+            Token::Symbol(",".to_string()),
+            Token::Keyword("char".to_string()),
+            Token::Identifier("y2".to_string()),
+        ];
+        assert_eq!(
+            parse_params(&three_params).unwrap(),
+            vec![
+                Param { param_type: Type::Int, name: "x".to_string() },
+                Param { param_type: Type::Class("Blargh".to_string()), name: "y1".to_string() },
+                Param { param_type: Type::Char, name: "y2".to_string() },
+            ]
+        );
+
+        let trailing_comma = &three_params[..three_params.len() - 2];
+        assert!(parse_params(trailing_comma).is_err());
+
+        let missing_identifier = &three_params[..three_params.len() - 1];
+        assert!(parse_params(missing_identifier).is_err());
+
+        let wrong_symbol = vec![
+            Token::Keyword("int".to_string()),
+            Token::Identifier("x".to_string()),
+            Token::Symbol(";".to_string()),
+            Token::Identifier("Blargh".to_string()),
+            Token::Identifier("y1".to_string()),
+        ];
+        assert!(parse_params(&wrong_symbol).is_err());
     }
 }
