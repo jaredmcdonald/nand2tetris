@@ -5,3 +5,4 @@ authors = ["Jared McDonald <jared.r.mcdonald@gmail.com>"]
 
 [dependencies]
 regex = "0.2.0"
+lazy_static = "1.0"

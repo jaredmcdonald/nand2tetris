@@ -73,7 +73,7 @@ impl TryInto<Keyword> for String {
     type Error = KeywordError;
 
     fn try_into(self) -> Result<Keyword, Self::Error> {
-        if let Some(kw) = map_string_to_keyword().get(&self) {
+        if let Some(kw) = STRING_TO_KEYWORD.get(&self) {
             Ok(*kw)
         } else {
             Err(Self::Error { message: format!("unrecognized keyword `{}`", self) })
@@ -83,8 +83,7 @@ impl TryInto<Keyword> for String {
 
 impl fmt::Display for Keyword {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let map = map_keyword_to_string();
-        write!(f, "{}", map.get(self).unwrap())
+        write!(f, "{}", KEYWORD_TO_STRING.get(self).unwrap())
     }
 }
 
@@ -97,7 +96,7 @@ impl TryInto<Symbol> for String {
     type Error = SymbolError;
 
     fn try_into(self) -> Result<Symbol, Self::Error> {
-        if let Some(sym) = map_string_to_symbol().get(&self) {
+        if let Some(sym) = STRING_TO_SYMBOL.get(&self) {
             Ok(*sym)
         } else {
             Err(Self::Error { message: format!("unrecognized symbol `{}`", self) })
@@ -107,8 +106,7 @@ impl TryInto<Symbol> for String {
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let map = map_symbol_to_string();
-        write!(f, "{}", map.get(self).unwrap())
+        write!(f, "{}", SYMBOL_TO_STRING.get(self).unwrap())
     }
 }
 
@@ -121,36 +119,38 @@ pub enum Token {
     IntegerConstant(String),
 }
 
-fn map_string_to_keyword() -> HashMap<String, Keyword> {
-    let mut map = HashMap::new();
-    for (s, k) in get_keyword_pairs() {
-        map.insert(s, k);
-    }
-    map
-}
+lazy_static! {
+    static ref STRING_TO_KEYWORD: HashMap<String, Keyword> = {
+        let mut map = HashMap::new();
+        for (s, k) in get_keyword_pairs() {
+            map.insert(s, k);
+        }
+        map
+    };
 
-fn map_keyword_to_string() -> HashMap<Keyword, String> {
-    let mut map = HashMap::new();
-    for (s, k) in get_keyword_pairs() {
-        map.insert(k, s);
-    }
-    map
-}
+    static ref KEYWORD_TO_STRING: HashMap<Keyword, String> = {
+        let mut map = HashMap::new();
+        for (s, k) in get_keyword_pairs() {
+            map.insert(k, s);
+        }
+        map
+    };
 
-fn map_string_to_symbol() -> HashMap<String, Symbol> {
-    let mut map = HashMap::new();
-    for (s, k) in get_symbol_pairs() {
-        map.insert(s, k);
-    }
-    map
-}
+    static ref STRING_TO_SYMBOL: HashMap<String, Symbol> = {
+        let mut map = HashMap::new();
+        for (s, k) in get_symbol_pairs() {
+            map.insert(s, k);
+        }
+        map
+    };
 
-fn map_symbol_to_string() -> HashMap<Symbol, String> {
-    let mut map = HashMap::new();
-    for (s, k) in get_symbol_pairs() {
-        map.insert(k, s);
-    }
-    map
+    static ref SYMBOL_TO_STRING: HashMap<Symbol, String> = {
+        let mut map = HashMap::new();
+        for (s, k) in get_symbol_pairs() {
+            map.insert(k, s);
+        }
+        map
+    };
 }
 
 fn get_symbol_pairs() -> Vec<(String, Symbol)> {
