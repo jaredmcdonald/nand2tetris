@@ -1,4 +1,5 @@
 #![feature(try_from)]
+#![feature(const_fn)]
 
 #[macro_use]
 extern crate lazy_static;

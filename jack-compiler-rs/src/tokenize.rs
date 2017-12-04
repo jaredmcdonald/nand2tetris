@@ -122,7 +122,7 @@ pub enum Token {
 lazy_static! {
     static ref STRING_TO_KEYWORD: HashMap<String, Keyword> = {
         let mut map = HashMap::new();
-        for (s, k) in get_keyword_pairs() {
+        for &(s, k) in get_keyword_pairs().iter() {
             map.insert(s.to_string(), k);
         }
         map
@@ -130,7 +130,7 @@ lazy_static! {
 
     static ref KEYWORD_TO_STRING: HashMap<Keyword, String> = {
         let mut map = HashMap::new();
-        for (s, k) in get_keyword_pairs() {
+        for &(s, k) in get_keyword_pairs().iter() {
             map.insert(k, s.to_string());
         }
         map
@@ -138,7 +138,7 @@ lazy_static! {
 
     static ref STRING_TO_SYMBOL: HashMap<String, Symbol> = {
         let mut map = HashMap::new();
-        for (string, sym) in get_symbol_pairs() {
+        for &(string, sym) in get_symbol_pairs().iter() {
             map.insert(string.to_string(), sym);
         }
         map
@@ -146,15 +146,15 @@ lazy_static! {
 
     static ref SYMBOL_TO_STRING: HashMap<Symbol, String> = {
         let mut map = HashMap::new();
-        for (string, sym) in get_symbol_pairs() {
+        for &(string, sym) in get_symbol_pairs().iter() {
             map.insert(sym, string.to_string());
         }
         map
     };
 }
 
-fn get_symbol_pairs() -> Vec<(&'static str, Symbol)> {
-    vec![
+const fn get_symbol_pairs() -> [(&'static str, Symbol); 19] {
+    [
         ("[", Symbol::OpenSquare),
         ("]", Symbol::CloseSquare),
         ("{", Symbol::OpenCurly),
@@ -177,8 +177,8 @@ fn get_symbol_pairs() -> Vec<(&'static str, Symbol)> {
     ]
 }
 
-fn get_keyword_pairs() -> Vec<(&'static str, Keyword)> {
-    vec![
+const fn get_keyword_pairs() -> [(&'static str, Keyword); 21] {
+    [
         ("class", Keyword::Class),
         ("constructor", Keyword::Constructor),
         ("function", Keyword::Function),
