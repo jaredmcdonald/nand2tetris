@@ -7,6 +7,7 @@ use regex::{Regex, Captures, self};
 #[derive(Debug, PartialEq)]
 pub enum TokenError {
     KeywordError(KeywordError),
+    SymbolError(SymbolError),
     InvalidTokenError(String),
     InvalidIdentifierError(String),
     IntTooBigError(u16),
@@ -40,6 +41,29 @@ pub enum Keyword {
     Return,
 }
 
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
+pub enum Symbol {
+    OpenSquare,
+    CloseSquare,
+    OpenCurly,
+    CloseCurly,
+    OpenParen,
+    CloseParen,
+    Period,
+    Comma,
+    Semi,
+    Plus,
+    Minus,
+    Mult,
+    Div,
+    Amp,
+    Pipe,
+    Lt,
+    Gt,
+    Eq,
+    Not,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct KeywordError {}
 
@@ -47,7 +71,7 @@ impl TryInto<Keyword> for String {
     type Error = KeywordError;
 
     fn try_into(self) -> Result<Keyword, Self::Error> {
-        if let Some(kw) = str_to_keyword().get(&self) {
+        if let Some(kw) = map_string_to_keyword().get(&self) {
             Ok(*kw)
         } else {
             Err(Self::Error {})
@@ -57,7 +81,29 @@ impl TryInto<Keyword> for String {
 
 impl fmt::Display for Keyword {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let map = keyword_to_str();
+        let map = map_keyword_to_string();
+        write!(f, "{}", map.get(self).unwrap())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SymbolError {}
+
+impl TryInto<Symbol> for String {
+    type Error = SymbolError;
+
+    fn try_into(self) -> Result<Symbol, Self::Error> {
+        if let Some(sym) = map_string_to_symbol().get(&self) {
+            Ok(*sym)
+        } else {
+            Err(Self::Error {})
+        }
+    }
+}
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let map = map_symbol_to_string();
         write!(f, "{}", map.get(self).unwrap())
     }
 }
@@ -65,13 +111,13 @@ impl fmt::Display for Keyword {
 #[derive(Debug, PartialEq)]
 pub enum Token {
     Keyword(Keyword),
-    Symbol(String),
+    Symbol(Symbol),
     Identifier(String),
     StringConstant(String),
     IntegerConstant(String),
 }
 
-fn str_to_keyword() -> HashMap<String, Keyword> {
+fn map_string_to_keyword() -> HashMap<String, Keyword> {
     let mut map = HashMap::new();
     for (s, k) in get_keyword_pairs() {
         map.insert(s, k);
@@ -79,12 +125,52 @@ fn str_to_keyword() -> HashMap<String, Keyword> {
     map
 }
 
-fn keyword_to_str() -> HashMap<Keyword, String> {
+fn map_keyword_to_string() -> HashMap<Keyword, String> {
     let mut map = HashMap::new();
     for (s, k) in get_keyword_pairs() {
         map.insert(k, s);
     }
     map
+}
+
+fn map_string_to_symbol() -> HashMap<String, Symbol> {
+    let mut map = HashMap::new();
+    for (s, k) in get_symbol_pairs() {
+        map.insert(s, k);
+    }
+    map
+}
+
+fn map_symbol_to_string() -> HashMap<Symbol, String> {
+    let mut map = HashMap::new();
+    for (s, k) in get_symbol_pairs() {
+        map.insert(k, s);
+    }
+    map
+}
+
+fn get_symbol_pairs() -> Vec<(String, Symbol)> {
+    vec![
+        ("[".to_string(), Symbol::OpenSquare),
+        ("]".to_string(), Symbol::CloseSquare),
+        ("{".to_string(), Symbol::OpenCurly),
+        ("}".to_string(), Symbol::CloseCurly),
+        ("(".to_string(), Symbol::OpenParen),
+        (")".to_string(), Symbol::CloseParen),
+        (".".to_string(), Symbol::Period),
+        (",".to_string(), Symbol::Comma),
+        (";".to_string(), Symbol::Semi),
+        ("+".to_string(), Symbol::Plus),
+        ("-".to_string(), Symbol::Minus),
+        ("*".to_string(), Symbol::Mult),
+        ("/".to_string(), Symbol::Div),
+        ("&".to_string(), Symbol::Amp),
+        ("|".to_string(), Symbol::Pipe),
+        ("<".to_string(), Symbol::Lt),
+        (">".to_string(), Symbol::Gt),
+        ("=".to_string(), Symbol::Eq),
+        ("~".to_string(), Symbol::Not),
+    ]
 }
 
 fn get_keyword_pairs() -> Vec<(String, Keyword)> {
@@ -120,11 +206,11 @@ impl fmt::Display for Token {
             &Token::Keyword(ref v) => ("keyword", v.to_string()),
             &Token::Symbol(ref v) => ("symbol", {
                 // need to escape some symbols for xml 🙄
-                if v == "<" {
+                if v == &Symbol::Lt {
                     "&lt;".to_string()
-                } else if v == ">" {
+                } else if v == &Symbol::Gt {
                     "&gt;".to_string()
-                } else if v == "&" {
+                } else if v == &Symbol::Amp {
                     "&amp;".to_string()
                 } else {
                     v.to_string()
@@ -147,6 +233,12 @@ impl From<regex::Error> for TokenError {
 impl From<KeywordError> for TokenError {
     fn from(error: KeywordError) -> Self {
         TokenError::KeywordError(error)
+    }
+}
+
+impl From<SymbolError> for TokenError {
+    fn from(error: SymbolError) -> Self {
+        TokenError::SymbolError(error)
     }
 }
 
@@ -194,7 +286,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
         if let Some(mat) = capture.name("keyword") {
             Ok(Token::Keyword(mat.as_str().to_string().try_into()?))
         } else if let Some(mat) = capture.name("symbol") {
-            Ok(Token::Symbol(mat.as_str().to_string()))
+            Ok(Token::Symbol(mat.as_str().to_string().try_into()?))
         } else if let Some(mat) = capture.name("string") {
             Ok(Token::StringConstant(mat.as_str().to_string()))
         } else if let Some(mat) = capture.name("identifier") {
