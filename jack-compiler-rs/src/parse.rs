@@ -4,11 +4,18 @@ use tokenize::Token;
 pub enum Statement {
     Let(LetStatement),
     If(IfStatement),
+    While(WhileStatement),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Expression {
     content: Vec<Token>, // TODO
+}
+
+#[derive(Debug, PartialEq)]
+pub struct WhileStatement {
+    condition: Expression,
+    body: Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -253,6 +260,17 @@ fn parse_if_statement(
     Ok(IfStatement { condition, if_body, else_body })
 }
 
+// this is suspiciously similar to `parse_if_statement` 🤔
+fn parse_while_statement(
+    condition_tokens: &[Token],
+    body_tokens: &[Token],
+) -> Result<WhileStatement, ParseError> {
+    Ok(WhileStatement {
+        condition: parse_expression(condition_tokens)?,
+        body: parse_statements(body_tokens)?
+    })
+}
+
 fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
     let mut statements = vec![];
     let mut parse_index = 0;
@@ -286,6 +304,19 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                         )?
                     ));
                     parse_index = parse_index + end_index + 1;
+                },
+                "while" => {
+                    // TODO is there a nice way to dedupe this code from above and elsewhere?
+                    let condition_start = parse_index + 1;
+                    let condition_end = balance_symbol(&tokens[condition_start..], "(", ")")?;
+                    let body_start = condition_end + 1;
+                    let body_end = balance_symbol(&tokens[body_start..], "{", "}")?;
+                    statements.push(Statement::While(
+                        parse_while_statement(
+                            &tokens[condition_start..condition_end],
+                            &tokens[body_start..body_end]
+                        )?
+                    ));
                 },
                 _ => return Err(ParseError {
                     message: format!("unexpected keyword to begin statement: {:?}", begin_token)
