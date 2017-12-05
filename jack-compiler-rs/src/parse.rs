@@ -278,7 +278,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
     let mut parse_index = 0;
     while parse_index < tokens.len() {
         let begin_token = &tokens[parse_index];
-        if let Token::Keyword(ref kw) = tokens[parse_index] {
+        if let &Token::Keyword(ref kw) = begin_token {
             match kw.as_ref() {
                 "let" => {
                     let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
@@ -321,7 +321,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                     statements.push(Statement::While(
                         parse_while_statement(
                             &tokens[condition_start..condition_end],
-                            &tokens[body_start..body_end]
+                            &tokens[body_start + 1..body_end]
                         )?
                     ));
                     parse_index = body_end + 1;
@@ -364,7 +364,7 @@ fn parse_subroutine_body(body: &[Token]) -> Result<SubroutineBody, ParseError> {
             let declaration_end = declaration_start +
                 find_token_index(&body[declaration_start..], Token::Symbol(";".to_string()))?;
             var_declarations.push(parse_var(&body[declaration_start..declaration_end])?);
-            parse_index = parse_index + declaration_end + 1;
+            parse_index = declaration_end + 1;
         } else {
             break;
         }
@@ -667,6 +667,27 @@ mod test {
     }
 
     #[test]
+    fn test_parse_while_statements() {
+        let while_statement = vec![
+            // while (x) {
+            Token::Keyword("while".to_string()),
+            Token::Symbol("(".to_string()),
+            Token::Identifier("x".to_string()),
+            Token::Symbol(")".to_string()),
+            Token::Symbol("{".to_string()),
+            // let y = 2;
+            Token::Keyword("let".to_string()),
+            Token::Identifier("y".to_string()),
+            Token::Symbol("=".to_string()),
+            Token::IntegerConstant("2".to_string()),
+            Token::Symbol(";".to_string()),
+            // } // end while
+            Token::Symbol("}".to_string()),
+        ];
+        assert!(parse_statements(&while_statement).is_ok());
+    }
+
+    #[test]
     fn test_parse_params() {
         // empty
         assert_eq!(parse_params(&vec![]).unwrap(), vec![]);
@@ -713,6 +734,36 @@ mod test {
             Token::Identifier("y1".to_string()),
         ];
         assert!(parse_params(&wrong_symbol).is_err());
+    }
+
+    #[test]
+    fn test_parse_subroutine_body() {
+        let input = vec![
+            // var int y, x;
+            Token::Keyword("var".to_string()),
+            Token::Keyword("int".to_string()),
+            Token::Identifier("y".to_string()),
+            Token::Symbol(",".to_string()),
+            Token::Identifier("x".to_string()),
+            Token::Symbol(";".to_string()),
+            // var Blargh z;
+            Token::Keyword("var".to_string()),
+            Token::Identifier("Blargh".to_string()),
+            Token::Identifier("z".to_string()),
+            Token::Symbol(";".to_string()),
+            // if (x) {
+            Token::Keyword("if".to_string()),
+            Token::Symbol("(".to_string()),
+            Token::Identifier("x".to_string()),
+            Token::Symbol(")".to_string()),
+            Token::Symbol("{".to_string()),
+            // return;
+            Token::Keyword("return".to_string()),
+            Token::Symbol(";".to_string()),
+            // } // end if
+            Token::Symbol("}".to_string()),
+        ];
+        assert!(parse_subroutine_body(&input).is_ok());
     }
 
     #[test]
