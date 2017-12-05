@@ -5,6 +5,8 @@ pub enum Statement {
     Let(LetStatement),
     If(IfStatement),
     While(WhileStatement),
+    Do(Expression), // TODO should just be a subroutine call
+    Return(Expression),
 }
 
 #[derive(Debug, PartialEq)]
@@ -317,6 +319,22 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                             &tokens[body_start..body_end]
                         )?
                     ));
+                    parse_index = parse_index + body_end + 1;
+                },
+                "do" => {
+                    let end_index = find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
+                    statements.push(Statement::Do(
+                        // TODO this should be a subroutine call
+                        parse_expression(&tokens[parse_index + 1..end_index])?
+                    ));
+                    parse_index = parse_index + end_index + 1;
+                },
+                "return" => {
+                    let end_index = find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
+                    statements.push(Statement::Return(
+                        parse_expression(&tokens[parse_index + 1..end_index])?
+                    ));
+                    parse_index = parse_index + end_index + 1;
                 },
                 _ => return Err(ParseError {
                     message: format!("unexpected keyword to begin statement: {:?}", begin_token)
