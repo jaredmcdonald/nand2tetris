@@ -1,6 +1,31 @@
 use tokenize::Token;
 
 #[derive(Debug, PartialEq)]
+pub enum Statement {
+    Let(LetStatement),
+    If(IfStatement),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Expression {
+    content: Vec<Token>, // TODO
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IfStatement {
+    condition: Expression,
+    if_body: Vec<Statement>,
+    else_body: Option<Vec<Statement>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct LetStatement {
+    name: String,
+    index_expression: Option<Expression>, // e.g. `let some_array[j + 1] = ...`
+    expression: Expression,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum SubroutineType {
     Constructor,
     Function,
@@ -18,9 +43,6 @@ pub struct Param {
     param_type: Type,
     name: String,
 }
-
-#[derive(Debug, PartialEq)]
-pub struct Statement {}
 
 #[derive(Debug, PartialEq)]
 pub struct SubroutineBody {
@@ -75,7 +97,7 @@ pub struct ParseError {
     message: String,
 }
 
-fn tokens_until(tokens: &[Token], close: Token) -> Result<usize, ParseError> {
+fn find_token_index(tokens: &[Token], close: Token) -> Result<usize, ParseError> {
     for (index, token) in tokens.iter().enumerate() {
         if *token == close {
             return Ok(index)
@@ -142,22 +164,9 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
         _ => return Err(ParseError { message: format!("unexpected token in class var declaration: {:?}", body[0]) }),
     };
 
-    let data_type = parse_type(&body[1])?;
+    let var = parse_var(&body[1..])?;
 
-    let mut names = vec![];
-    for (index, token) in body[2..].iter().enumerate() {
-        if index % 2 != 0 {
-            if token == &Token::Symbol(",".to_string()) {
-                continue;
-            } else {
-                return Err(ParseError { message: format!("expected `,`, found {:?}", token) });
-            }
-        } else {
-            names.push(parse_identifier(&token)?);
-        }
-    }
-
-    Ok(ClassVar { var_type, var: Var { data_type, names }})
+    Ok(ClassVar { var_type, var })
 }
 
 fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
@@ -190,20 +199,124 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
 }
 
 fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
-    Err(ParseError { message: "argh".to_string() })
+    let data_type = parse_type(&tokens[0])?;
+    let mut names = vec![];
+    for (index, token) in tokens[1..].iter().enumerate() {
+        if index % 2 != 0 {
+            if token == &Token::Symbol(",".to_string()) {
+                continue;
+            } else {
+                return Err(ParseError { message: format!("expected `,`, found {:?}", token) });
+            }
+        } else {
+            names.push(parse_identifier(&token)?);
+        }
+    }
+    Ok(Var { names, data_type })
+}
+
+fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
+    Ok(Expression { content: tokens.to_vec() })
+}
+
+fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
+    let name = parse_identifier(&tokens[0])?;
+
+    let (index_expression, eq_index) = if &tokens[1] == &Token::Symbol("[".to_string()) {
+        let close_index = balance_symbol(&tokens[1..], "[", "]")?;
+        (Some(parse_expression(&tokens[2..close_index])?), close_index + 1)
+    } else {
+        (None, 1)
+    };
+
+    if &tokens[eq_index] != &Token::Symbol("=".to_string()) {
+        return Err(ParseError {
+            message: format!("expected `=` in let statement, found token {:?}", tokens[eq_index])
+        });
+    }
+
+    let expression = parse_expression(&tokens[eq_index + 1..])?;
+    Ok(LetStatement { name, expression, index_expression })
+}
+
+fn parse_if_statement(
+    condition_tokens: &[Token],
+    if_body_tokens: &[Token],
+    else_body_tokens: Option<&[Token]>
+) -> Result<IfStatement, ParseError> {
+    let condition = parse_expression(condition_tokens)?;
+    let if_body = parse_statements(if_body_tokens)?;
+    let else_body = if let Some(tokens) = else_body_tokens {
+        Some(parse_statements(tokens)?)
+    } else { None };
+
+    Ok(IfStatement { condition, if_body, else_body })
+}
+
+fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
+    let mut statements = vec![];
+    let mut parse_index = 0;
+    while parse_index < tokens.len() {
+        let begin_token = &tokens[parse_index];
+        if let Token::Keyword(ref kw) = tokens[parse_index] {
+            match kw.as_ref() {
+                "let" => {
+                    let end_index = find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
+                    statements.push(
+                        Statement::Let(parse_let_statement(&tokens[parse_index + 1..end_index])?)
+                    );
+                    parse_index = parse_index + end_index + 1;
+                },
+                "if" => {
+                    let condition_start = parse_index + 1;
+                    let condition_end = balance_symbol(&tokens[condition_start..], "(", ")")?;
+                    let body_start = condition_end + 1;
+                    let body_end = balance_symbol(&tokens[body_start..], "{", "}")?;
+                    let (maybe_else_body, end_index) = if &tokens[body_end + 1] == &Token::Keyword("else".to_string()) {
+                        let else_end = balance_symbol(&tokens[body_end + 2..], "{", "}")?;
+                        (Some(&tokens[body_end + 3..else_end]), else_end)
+                    } else {
+                        (None, body_end)
+                    };
+                    statements.push(Statement::If(
+                        parse_if_statement(
+                            &tokens[condition_start..condition_end],
+                            &tokens[body_start..body_end],
+                            maybe_else_body
+                        )?
+                    ));
+                    parse_index = parse_index + end_index + 1;
+                },
+                _ => return Err(ParseError {
+                    message: format!("unexpected keyword to begin statement: {:?}", begin_token)
+                }),
+            }
+        } else {
+            return Err(ParseError {
+                message: format!("expected keyword to begin statement, got {:?}", begin_token)
+            })
+        }
+    }
+    Ok(statements)
 }
 
 fn parse_subroutine_body(body: &[Token]) -> Result<SubroutineBody, ParseError> {
     let mut parse_index = 0;
     let mut var_declarations = vec![];
     while parse_index < body.len() {
-        if body[parse_index] == Token::Keyword("var".to_string()) {
-            let declaration_end = tokens_until(&body[parse_index..], Token::Symbol(";".to_string()))?;
-            var_declarations.push(parse_var(&body[parse_index..parse_index + declaration_end]));
+        let current_token = &body[parse_index];
+        if current_token == &Token::Keyword("var".to_string()) {
+            let declaration_end = find_token_index(&body[parse_index..], Token::Symbol(";".to_string()))?;
+            var_declarations.push(parse_var(&body[parse_index..parse_index + declaration_end])?);
             parse_index = parse_index + declaration_end + 1;
+        } else {
+            break;
         }
     }
-    Err(ParseError {message: "unimplemented!".to_string()})
+
+    let statements = parse_statements(&body[parse_index..])?;
+
+    Ok(SubroutineBody { var_declarations, statements })
 }
 
 fn parse_subroutine(
@@ -253,7 +366,7 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
     while current_token_index < body.len() {
         if let Token::Keyword(ref keyword) = body[current_token_index] {
             if keyword == "static" || keyword == "field" {
-                let end_index = tokens_until(&body[current_token_index..], Token::Symbol(";".to_string()))?;
+                let end_index = find_token_index(&body[current_token_index..], Token::Symbol(";".to_string()))?;
                 class_vars.push(parse_class_var(&body[current_token_index..current_token_index + end_index])?);
                 current_token_index = end_index + 1;
             } else if keyword ==  "constructor" || keyword == "function" || keyword == "method" {
@@ -261,7 +374,7 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
                 let return_type = &body[current_token_index + 2];
                 let name = &body[current_token_index + 3];
                 let params_start = current_token_index + 4;
-                let params_end = tokens_until(&body[params_start..], Token::Symbol(")".to_string()))?;
+                let params_end = find_token_index(&body[params_start..], Token::Symbol(")".to_string()))?;
                 let body_start = params_end + 1;
                 let body_end = balance_symbol(&body[body_start..], "{", "}")?;
                 subroutines.push(
@@ -309,8 +422,8 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_tokens_until() {
-        assert_eq!(tokens_until(
+    fn test_find_token_index() {
+        assert_eq!(find_token_index(
             vec![
                 Token::Keyword("static".to_string()),
                 Token::Keyword("int".to_string()),

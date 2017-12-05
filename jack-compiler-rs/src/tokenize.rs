@@ -2,7 +2,7 @@ use std::fmt;
 use std::num::ParseIntError;
 use regex::{Regex, Captures, self};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     Keyword(String),
     Symbol(String),
