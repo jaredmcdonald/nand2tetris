@@ -449,7 +449,7 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
     Ok(Class { name: name.to_string(), class_vars, subroutines })
 }
 
-pub fn parse_outer(tokens: &[Token]) -> Result<Class, ParseError> {
+pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
     if tokens[0] == Token::Keyword("class".to_string()) {
         if let Token::Identifier(ref classname) = tokens[1] {
             let body_end = balance_symbol(&tokens[2..], "{", "}")?;
@@ -532,7 +532,7 @@ mod test {
             Token::Symbol(";".to_string()),
             Token::Symbol("}".to_string()),
         ];
-        assert!(parse_outer(&input).is_ok());
+        assert!(parse(&input).is_ok());
     }
 
     #[test]
