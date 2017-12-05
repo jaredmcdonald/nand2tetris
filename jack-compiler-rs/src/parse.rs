@@ -1,3 +1,4 @@
+use std::fmt;
 use tokenize::Token;
 
 #[derive(Debug, PartialEq)]
@@ -5,8 +6,41 @@ pub enum Statement {
     Let(LetStatement),
     If(IfStatement),
     While(WhileStatement),
-    Do(Expression), // TODO should just be a subroutine call
+    Do(Vec<Token>), // TODO should just be a subroutine call
     Return(Expression),
+}
+
+impl fmt::Display for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Statement::Let(ref s) => write!(f, "<letStatement>\n{}\n</letStatement>", s),
+            Statement::If(ref s) => write!(f, "<ifStatement>\n{}\n</ifStatement>", s),
+            Statement::While(ref s) => write!(f, "<whileStatement>\n{}\n</whileStatement>", s),
+            Statement::Do(ref s) => {
+                let do_content = s.iter().map(|token| format!("{}", token))
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                write!(f,
+                    "<doStatement>
+                        <keyword>do</keyword>
+                        {}
+                        <symbol>;</symbol>
+                    </doStatement>",
+                    do_content
+                )
+            },
+            Statement::Return(ref s) => {
+                let maybe_expr = if s.content.len() > 0 { format!("\n{}", s) } else { "".to_string() };
+                write!(f,
+                    "<returnStatement>
+                        <keyword>return</keyword>{}
+                        <symbol>;</symbol>
+                    </returnStatement>",
+                    maybe_expr
+                )
+            },
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -14,10 +48,36 @@ pub struct Expression {
     content: Vec<Token>, // TODO
 }
 
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let content = self.content.iter().map(|t| format!("{}", t)).collect::<String>();
+        write!(f, "<expression>\n<term>\n{}\n</term>\n</expression>", content)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct WhileStatement {
     condition: Expression,
     body: Vec<Statement>,
+}
+
+impl fmt::Display for WhileStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let body = self.body.iter().map(|t| format!("{}", t)).collect::<String>();
+        write!(f,
+            "<keyword>while</keyword>
+            <symbol>(</symbol>
+            {}
+            <symbol>)</symbol>
+            <symbol>{{</symbol>
+            <statements>
+                {}
+            </statements>
+            <symbol>}}</symbol>",
+            self.condition,
+            body
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -27,11 +87,63 @@ pub struct IfStatement {
     else_body: Option<Vec<Statement>>,
 }
 
+impl fmt::Display for IfStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let if_body = self.if_body.iter().map(|t| format!("{}", t)).collect::<String>();
+        let maybe_else = if let Some(ref else_body) = self.else_body {
+            format!(
+                "<keyword>else</keyword>
+                <symbol>{{</symbol>
+                <statements>
+                    {}
+                </statements>
+                <symbol>}}</symbol>",
+                else_body.iter().map(|t| format!("{}", t)).collect::<String>()
+            )
+        } else { "".to_string() };
+        write!(f,
+            "<keyword>if</keyword>
+            <symbol>(</symbol>
+            {}
+            <symbol>)</symbol>
+            <symbol>{{</symbol>
+            <statements>
+                {}
+            </statements>
+            <symbol>}}</symbol>
+            {}",
+            self.condition,
+            if_body,
+            maybe_else
+        )
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct LetStatement {
     name: String,
     index_expression: Option<Expression>, // e.g. `let some_array[j + 1] = ...`
     expression: Expression,
+}
+
+impl fmt::Display for LetStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let maybe_index_expression = if let Some(ref index_expr) = self.index_expression {
+            format!(
+                "\n<symbol>[</symbol>
+                    {}
+                 <symbol>]</symbol>", index_expr)
+        } else { "".to_string() };
+        write!(f, "<keyword>let</keyword>
+            <identifier>{}</identifier>{}
+            <symbol>=</symbol>
+            {}
+            <symbol>;</symbol>",
+            self.name,
+            maybe_index_expression,
+            self.expression
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -41,10 +153,29 @@ pub enum SubroutineType {
     Method,
 }
 
+impl fmt::Display for SubroutineType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<keyword>{}</keyword>", match self {
+            &SubroutineType::Constructor => "constructor",
+            &SubroutineType::Function => "function",
+            &SubroutineType::Method => "method",
+        })
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SubroutineReturnType {
     Void,
     Type(Type),
+}
+
+impl fmt::Display for SubroutineReturnType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &SubroutineReturnType::Void => write!(f, "<keyword>void</keyword>"),
+            &SubroutineReturnType::Type(ref t) => write!(f, "{}", t),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -53,10 +184,43 @@ pub struct Param {
     name: String,
 }
 
+impl fmt::Display for Param {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}\n<identifier>{}</identifier>", self.param_type, self.name)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct SubroutineBody {
     var_declarations: Vec<Var>,
     statements: Vec<Statement>,
+}
+
+impl fmt::Display for SubroutineBody {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let var_declarations = self.var_declarations.iter().map(|v| {
+            format!(
+                "<varDec>
+                    <keyword>var</keyword>
+                    {}
+                    <symbol>;</symbol>
+                </varDec>",
+                v
+            )
+        }).collect::<Vec<String>>().join("\n");
+        let statements = self.statements.iter().map(|s| format!("{}", s)).collect::<Vec<String>>().join("\n");
+        write!(f,
+            "<subroutineBody>
+                <symbol>{{</symbol>{}
+                    <statements>
+                    {}
+                    </statements>
+                <symbol>}}</symbol>
+            </subroutineBody>",
+            var_declarations,
+            statements
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,10 +232,45 @@ pub struct Subroutine {
     body: SubroutineBody,
 }
 
+impl fmt::Display for Subroutine {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let param_list_body = self.params.iter().map(|p| format!("{}", p))
+            .collect::<Vec<String>>()
+            .join("\n<symbol>,</symbol>\n");
+
+        write!(f,
+            "<subroutineDec>
+                {}
+                {}
+                <identifier>{}</identifier>
+                <symbol>(</symbol>
+                    <parameterList>{}
+                    </parameterList>
+                <symbol>)</symbol>
+                {}
+            </subroutineDec>",
+            self.subroutine_type,
+            self.return_type,
+            self.name,
+            param_list_body,
+            self.body
+        )
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum ClassVarType {
     Field,
     Static,
+}
+
+impl fmt::Display for ClassVarType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<keyword>{}</keyword>", match self {
+            &ClassVarType::Field => "field",
+            &ClassVarType::Static => "static",
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -82,10 +281,35 @@ pub enum Type {
     Class(String),
 }
 
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Type::Int => write!(f, "<keyword>int</keyword>"),
+            &Type::Char => write!(f, "<keyword>char</keyword>"),
+            &Type::Boolean => write!(f, "<keyword>boolean</keyword>"),
+            &Type::Class(ref s) => write!(f, "<identifier>{}</identifier>", s),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct ClassVar {
     var_type: ClassVarType,
     var: Var,
+}
+
+impl fmt::Display for ClassVar {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+            "<classVarDec>
+                {}
+                {}
+                <symbol>;</symbol>
+            </classVarDec>",
+            self.var_type,
+            self.var
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -94,11 +318,44 @@ pub struct Var {
     names: Vec<String>, // can declare more than one at once, e.g. `static int x, y;`
 }
 
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let names = self.names.iter().map(|n| format!("<identifier>{}</identifier>", n))
+            .collect::<Vec<String>>()
+            .join("\n<symbol>,</symbol>\n");
+        write!(f, "{}\n{}", self.data_type, names)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Class {
     name: String,
     class_vars: Vec<ClassVar>,
     subroutines: Vec<Subroutine>,
+}
+
+impl fmt::Display for Class {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let class_vars = self.class_vars.iter().map(|cv| format!("{}", cv))
+            .collect::<Vec<String>>()
+            .join("\n");
+        let subroutines = self.subroutines.iter().map(|s| format!("{}", s))
+            .collect::<Vec<String>>()
+            .join("\n");
+        write!(f,
+            "<class>
+                <keyword>class</keyword>
+                <identifier>{}</identifier>
+                <symbol>{{</symbol>
+                    {}
+                    {}
+                <symbol>}}</symbol>
+            </class>",
+            self.name,
+            class_vars,
+            subroutines
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -330,7 +587,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                     let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
                     statements.push(Statement::Do(
                         // TODO this should be a subroutine call
-                        parse_expression(&tokens[parse_index + 1..end_index])?
+                        tokens[parse_index + 1..end_index].to_vec()
                     ));
                     parse_index = end_index + 1;
                 },

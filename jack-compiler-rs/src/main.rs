@@ -48,7 +48,7 @@ fn tokenize_and_parse_file() -> Result<(), CliError> {
     let contents = read_file_to_string()?;
     let tokens = tokenize(&contents)?;
     let parsed = parse(&tokens)?;
-    println!("{:?}", parsed);
+    println!("{}", parsed);
     Ok(())
 }
 
