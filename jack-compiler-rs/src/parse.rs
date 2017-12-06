@@ -681,6 +681,42 @@ fn parse_subroutine(
     })
 }
 
+fn parse_class_body_helper(tokens: &[Token]) -> Result<(Vec<ClassVar>, Vec<Subroutine>), ParseError> {
+    let mut tokenz = Vec::new();
+    let mut i = 0;
+    let mut class_vars = Vec::new();
+    let mut subroutine = Vec::new();
+    let mut exp_stack = Vec::new();
+
+    while i < tokens.len() {
+        if tokens[i] == Token::Keyword("static".to_string())
+            || tokens[i] == Token::Keyword("field".to_string()) {
+            exp_stack.push(Token::Symbol(";".to_string()));
+        } 
+         //  else if tokens[i] == Token::Keyword("constructor".to_string()) 
+         //   || tokens[i] == Token::Keyword("function".to_string()) 
+         //   || tokens[i] == Token::Keyword("method".to_string()) {
+         //  }
+        if tokens[i] == Token::Symbol("{".to_string()) {
+            exp_stack.push(Token::Symbol("}".to_string()));
+        } else if tokens[i] == Token::Symbol("}".to_string()) {
+            exp_stack.pop();
+        } else if tokens[i] == Token::Symbol(";".to_string()) && exp_stack.len() == 1 {
+            exp_stack.pop();
+        }
+
+        tokenz.push(tokens[i].clone());
+        if exp_stack.len() == 0 {
+            let (cvs, sub) = parse_class_body(&tokenz)?;
+            class_vars.extend(cvs);
+            subroutine.extend(sub);
+            exp_stack.clear();
+        }
+        i += 1;
+    }
+    Ok((class_vars, subroutine))
+}
+
 fn parse_class_body(tokens: &[Token]) -> Result<(Vec<ClassVar>, Vec<Subroutine>), ParseError> {
     match tokens.iter().peekable().peek() {
         Some(&&Token::Keyword(ref keyword)) => {
