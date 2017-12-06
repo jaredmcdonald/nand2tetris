@@ -310,7 +310,7 @@ impl fmt::Display for ClassBodyItem {
             &ClassBodyItem::ClassVar(c) => write!(f, "{}", c),
             &ClassBodyItem::Subroutine(s) => write!(f, "{}", s),
         }
-    }    
+    }
 }
 
 impl fmt::Display for ClassVar {
@@ -654,7 +654,7 @@ fn parse_subroutine(tokens: &[Token]) -> Result<Subroutine, ParseError> {
     let subroutine_type_err = ParseError {
         message: format!("expected `constructor`, `function` or `method`, got {:?}", tokens[0]),
     };
-    let subroutine_type = if let &Token::Keyword(ref kw) = tokens[0] {
+    let subroutine_type = if let Token::Keyword(ref kw) = tokens[0] {
         match kw.as_ref() {
             "function" => SubroutineType::Function,
             "constructor" => SubroutineType::Constructor,
@@ -665,13 +665,13 @@ fn parse_subroutine(tokens: &[Token]) -> Result<Subroutine, ParseError> {
         return Err(subroutine_type_err);
     };
 
-    let return_type = if tokens[1] == &Token::Keyword("void".to_string()) {
+    let return_type = if tokens[1] == Token::Keyword("void".to_string()) {
         SubroutineReturnType::Void
     } else {
-        SubroutineReturnType::Type(parse_type(&return_type_token)?)
+        SubroutineReturnType::Type(parse_type(&tokens[1])?)
     };
 
-    let name = parse_identifier(tokens[2])?;
+    let name = parse_identifier(&tokens[2])?;
     let params = parse_params(params_body)?;
     let body = parse_subroutine_body(subroutine_body)?;
 
@@ -694,7 +694,7 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
         if tokens[i] == Token::Keyword("static".to_string())
             || tokens[i] == Token::Keyword("field".to_string()) {
             exp_stack.push(Token::Symbol(";".to_string()));
-        } 
+        }
         if tokens[i] == Token::Symbol("{".to_string()) {
             exp_stack.push(Token::Symbol("}".to_string()));
         } else if tokens[i] == Token::Symbol("}".to_string()) {
