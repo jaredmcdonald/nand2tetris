@@ -312,6 +312,9 @@ impl fmt::Display for ClassVar {
     }
 }
 
+// static int x;
+// field char y, z;
+
 #[derive(Debug, PartialEq)]
 pub struct Var {
     data_type: Type,
@@ -361,6 +364,12 @@ impl fmt::Display for Class {
 #[derive(Debug, PartialEq)]
 pub struct ParseError {
     message: String,
+}
+
+impl ParseError {
+    pub fn new(msg: &str) -> ParseError {
+        ParseError { message: msg.to_string() }
+    }
 }
 
 fn find_token_index(tokens: &[Token], close: Token) -> Result<usize, ParseError> {
@@ -672,53 +681,84 @@ fn parse_subroutine(
     })
 }
 
-fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
-    let mut class_vars = vec![];
-    let mut subroutines = vec![];
-    let mut parse_index = 0;
-    while parse_index < body.len() {
-        if let Token::Keyword(ref keyword) = body[parse_index] {
+fn parse_class_body(tokens: &[Token]) -> Result<(Vec<ClassVar>, Vec<Subroutine>), ParseError> {
+    match tokens.iter().peekable().peek() {
+        Some(&&Token::Keyword(ref keyword)) => {
+            let mut token_iterator = tokens.iter();
             if keyword == "static" || keyword == "field" {
-                let end_index = parse_index + find_token_index(&body[parse_index..], Token::Symbol(";".to_string()))?;
-                class_vars.push(parse_class_var(&body[parse_index..end_index])?);
-                parse_index = end_index + 1;
-            } else if keyword ==  "constructor" || keyword == "function" || keyword == "method" {
-                let subroutine_type = &body[parse_index];
-                let return_type = &body[parse_index + 1];
-                let name = &body[parse_index + 2];
-                let params_start = parse_index + 4; // + 3 is the open paren
-                let params_end = params_start + find_token_index(&body[params_start..], Token::Symbol(")".to_string()))?;
-                let body_start = params_end + 1;
-                let body_end = body_start + balance_symbol(&body[body_start..], "{", "}")?;
+                let field_def_tokens = token_iterator
+                    .take_while(|t| t != &&Token::Symbol(";".to_string()))
+                    .map(|t| *t).collect::<Vec<Token>>(); // any way to avoid doing this?
+
+                let (mut class_vars, subroutines) = parse_class_body(
+                    &token_iterator.clone().map(|t| *t).collect::<Vec<Token>>()
+                )?;
+
+                class_vars.push(parse_class_var(&field_def_tokens)?);
+
+                Ok((class_vars, subroutines))
+            } else if keyword == "constructor" || keyword == "function" || keyword == "method" {
+                let mut token_iterator = tokens.iter();
+                let subroutine_type = token_iterator.next().unwrap(); // we know this is safe b/c we peeked it
+                let return_type = token_iterator.next().ok_or(ParseError::new(
+                    "error parsing subroutine, missing return type"
+                ))?;
+                let fn_name = token_iterator.next().ok_or(ParseError::new(
+                    "error parsing subroutine, missing subroutine name"
+                ))?;
+                match token_iterator.next() {
+                    Some(&Token::Symbol(ref s)) => {
+                        if s != "(" {
+                            return Err(ParseError::new(format!("expected `(`, got `{}`", s).as_ref()));
+                        }
+                    },
+                    _ => return Err(ParseError::new("expected an open paren")),
+                }
+                let params = token_iterator.take_while(
+                    |t| t != &&Token::Symbol(")".to_string())
+                ).map(|t| *t).collect::<Vec<Token>>();
+                let mut balance = 0;
+                let body = token_iterator.take_while(|t| {
+                    if t == &&Token::Symbol("{".to_string()) {
+                        balance += 1;
+                    } else if t == &&Token::Symbol("}".to_string()) {
+                        balance -= 1;
+                    }
+                    balance != 0
+                }).map(|t| *t).collect::<Vec<Token>>();
+
+                let (class_vars, mut subroutines) = parse_class_body(
+                    &token_iterator.map(|t| *t).collect::<Vec<Token>>()
+                )?;
                 subroutines.push(
                     parse_subroutine(
                         &subroutine_type,
                         &return_type,
-                        &name,
-                        &body[params_start..params_end],
-                        &body[body_start + 1..body_end]
+                        &fn_name,
+                        &params[..params.len() - 2], // discard trailing paren
+                        &body[1..body.len() - 2]     // discard the brackets
                     )?
                 );
-                parse_index = body_end + 1;
+                Ok((class_vars, subroutines))
             } else {
-                return Err(ParseError {
-                    message: format!("unexpected keyword in class body: {}", keyword),
-                });
+                Err(ParseError::new(format!("unexpected keyword in class body: `{}`", keyword).as_ref()))
             }
-        } else {
-            return Err(ParseError {
-                message: format!("unexpected token in class body: {:?}", body[parse_index]),
-            });
-        }
+        },
+        Some(t) => Err(ParseError::new(format!("unexpected token in class body: {:?}", t).as_ref())),
+        None => Ok((vec![], vec![])), // base case
     }
-    Ok(Class { name: name.to_string(), class_vars, subroutines })
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
     if tokens[0] == Token::Keyword("class".to_string()) {
         if let Token::Identifier(ref classname) = tokens[1] {
             let body_end = balance_symbol(&tokens[2..], "{", "}")?;
-            Ok(parse_class(&classname, &tokens[3..body_end + 2])?)
+            let (class_vars, subroutines) = parse_class_body(&tokens[3..body_end + 2])?;
+            Ok(Class {
+                name: classname.to_string(),
+                class_vars,
+                subroutines,
+            })
         } else {
             Err(ParseError {
                 message: format!("expected an identifier after `class`, got {:?}", tokens[1]),
