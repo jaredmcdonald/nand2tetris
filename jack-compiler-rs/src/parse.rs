@@ -486,22 +486,34 @@ fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
 }
 
 fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
-    let name = parse_identifier(&tokens[0])?;
+    let mut peekable = tokens.iter().peekable();
+    let name = parse_identifier(peekable.next().ok_or(ParseError {
+        message: "missing identifier in let statement".to_string(),
+    })?)?;
 
-    let (index_expression, eq_index) = if &tokens[1] == &Token::Symbol("[".to_string()) {
-        let close_index = 1 + balance_symbol(&tokens[1..], "[", "]")?;
-        (Some(parse_expression(&tokens[2..close_index])?), close_index + 1)
+    let index_expression = if let Some(&&Token::Symbol(ref s)) = peekable.peek() {
+        if s == "[" {
+            let mut balance = 0;
+            let index_expr_tokens = peekable.clone().take_while(|t| {
+                if t == &&Token::Symbol("[".to_string()) {
+                    balance += 1;
+                } else if t == &&Token::Symbol("]".to_string()) {
+                    balance -= 1;
+                }
+                balance == 0
+            }).map(|t| t.clone()).collect::<Vec<Token>>();
+
+            Some(parse_expression(&index_expr_tokens)?)
+        } else {
+            None
+        }
     } else {
-        (None, 1)
+        return Err(ParseError { message: "unexpected token in let statement".to_string() });
     };
 
-    if &tokens[eq_index] != &Token::Symbol("=".to_string()) {
-        return Err(ParseError {
-            message: format!("expected `=` in let statement, found token {:?}", tokens[eq_index])
-        });
-    }
-
-    let expression = parse_expression(&tokens[eq_index + 1..])?;
+    let after_equals = peekable.skip_while(|t| t != &&Token::Symbol("=".to_string()));
+    let expression_tokens = after_equals.map(|t| t.clone()).collect::<Vec<Token>>();
+    let expression = parse_expression(&expression_tokens)?;
     Ok(LetStatement { name, expression, index_expression })
 }
 
