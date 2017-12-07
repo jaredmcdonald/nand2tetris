@@ -1,6 +1,7 @@
 use std::fmt;
 use std::num::ParseIntError;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use regex::{Regex, Captures, self};
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
@@ -56,15 +57,18 @@ pub struct KeywordError {
     message: String,
 }
 
-impl Into<Keyword> for String {
-    fn into(self) -> Keyword {
+impl TryInto<Keyword> for String {
+    type Error = KeywordError;
+
+    fn try_into(self) -> Result<Keyword, Self::Error> {
         if let Some(kw) = STRING_TO_KEYWORD.get(&self) {
-            *kw
+            Ok(*kw)
         } else {
-            panic!("unrecognized keyword `{}`, the tokenize regex should have caught this", self)
+            Err(Self::Error { message: format!("unrecognized keyword `{}`", self) })
         }
     }
 }
+
 
 impl fmt::Display for Keyword {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -77,12 +81,14 @@ pub struct SymbolError {
     message: String,
 }
 
-impl Into<Symbol> for String {
-    fn into(self) -> Symbol {
-        if let Some(sym) = STRING_TO_SYMBOL.get(&self) {
-            *sym
+impl TryInto<Symbol> for String {
+    type Error = KeywordError;
+
+    fn try_into(self) -> Result<Symbol, Self::Error> {
+        if let Some(kw) = STRING_TO_SYMBOL.get(&self) {
+            Ok(*kw)
         } else {
-            panic!("unrecognized symbol `{}`, the tokenize regex should have caught this", self)
+            Err(Self::Error { message: format!("unrecognized symbol `{}`", self) })
         }
     }
 }
@@ -281,9 +287,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
 
     let tokenized = tokenize_regex.captures_iter(&strip_comments(input)?).map(|capture| {
         if let Some(mat) = capture.name("keyword") {
-            Ok(Token::Keyword(mat.as_str().to_string().into()))
+            Ok(Token::Keyword(mat.as_str().to_string().try_into()?))
         } else if let Some(mat) = capture.name("symbol") {
-            Ok(Token::Symbol(mat.as_str().to_string().into()))
+            Ok(Token::Symbol(mat.as_str().to_string().try_into()?))
         } else if let Some(mat) = capture.name("string") {
             Ok(Token::StringConstant(mat.as_str().to_string()))
         } else if let Some(mat) = capture.name("identifier") {
