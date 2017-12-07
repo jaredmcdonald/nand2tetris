@@ -48,6 +48,14 @@ pub struct Expression {
     content: Vec<Token>, // TODO
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ExpressionTerm {
+    IntegerConstant(u16),
+    StringConstant(String),
+    KeywordConstant(Keyword),
+    VarName(String)
+}
+
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let content = self.content.iter().map(|t| format!("{}", t)).collect::<String>();
@@ -485,6 +493,45 @@ fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
 
 // TODO
 fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
+    let mut peekable = tokens.iter().peekable();
+    let term = match peekable.next() {
+        Some(&&Token::IntegerConstant(i)) => vec![ExpressionTerm::IntegerConstant(i)],
+        Some(&&Token::StringConstant(s)) => vec![ExpressionTerm::StringConstant(s)],
+        Some(&&Token::Keyword(k)) => {
+            if k == Keyword::True || k == Keyword::False || k == Keyword::Null || k == Keyword::This {
+                vec![ExpressionTerm::KeywordConstant(k)]
+            } else {
+                return Err(ParseError {
+                    message: format!("unexpected keyword `{:?}` in expression", k)
+                }),
+            }
+        },
+        Some(&&Token::Identifier(id)) => {
+            let next = peekable.by_ref().peek();
+            if next == None {
+                // lone var name
+                vec![ExpressionTerm::VarName(id)]
+            } else if next == Some(&&Token::Symbol(Symbol::OpenSquare)) {
+                // parse index expr
+            } else if next == Some(&&Token::Symbol(Symbol::OpenParen)) ||
+                      next == Some(&&Token::Symbol(Symbol::Period)) {
+                // parse subroutine call
+            } else {
+                // next is probably an op
+            }
+        },
+        Some(&&Token::Symbol(s)) => {
+            if s == &&Symbol::Minus || s == &&Symbol::Not {
+                // unary op then term
+            } else if s == &&Symbol::OpenParen {
+                // parenthetical expression
+            } else {
+                return Err(ParseError {
+                    message: format!("expected term, got symbol `{:?}` in expression", s)
+                }),
+            }
+        }
+    }
     Ok(Expression { content: tokens.to_vec() })
 }
 
