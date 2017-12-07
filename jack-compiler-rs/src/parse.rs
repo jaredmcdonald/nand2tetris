@@ -1,5 +1,5 @@
 use std::fmt;
-use tokenize::Token;
+use tokenize::{Token, Symbol, Keyword};
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
@@ -374,9 +374,9 @@ fn find_token_index(tokens: &[Token], close: Token) -> Result<usize, ParseError>
     })
 }
 
-fn balance_symbol(tokens: &[Token], open: &str, close: &str) -> Result<usize, ParseError> {
+fn balance_symbol(tokens: &[Token], open: Symbol, close: Symbol) -> Result<usize, ParseError> {
     let mut balance = 1;
-    if tokens[0] != Token::Symbol(open.to_string()) {
+    if tokens[0] != Token::Symbol(open) {
         return Err(ParseError {
             // how to maintain context so these errors are more sensible?
             message: format!("unable to balance symbols: expected {} in first position, got {:?}", open, tokens[0])
@@ -384,9 +384,9 @@ fn balance_symbol(tokens: &[Token], open: &str, close: &str) -> Result<usize, Pa
     }
     for (index, token) in tokens[1..].iter().enumerate() {
         if let Token::Symbol(ref t) = *token {
-            if t == open {
+            if t == &open {
                 balance += 1;
-            } else if t == close {
+            } else if t == &close {
                 balance -= 1
             }
         }
@@ -401,12 +401,9 @@ fn balance_symbol(tokens: &[Token], open: &str, close: &str) -> Result<usize, Pa
 
 fn parse_type(token: &Token) -> Result<Type, ParseError> {
     match token {
-        &Token::Keyword(ref kw) => match kw.as_ref() {
-            "int" => Ok(Type::Int),
-            "char" => Ok(Type::Char),
-            "boolean" => Ok(Type::Boolean),
-            _ => Err(ParseError { message: format!("expected a type, got keyword {:?}", kw) }),
-        },
+        &Token::Keyword(Keyword::Int) => Ok(Type::Int),
+        &Token::Keyword(Keyword::Char) => Ok(Type::Char),
+        &Token::Keyword(Keyword::Boolean) => Ok(Type::Boolean),
         &Token::Identifier(ref id) => Ok(Type::Class(id.to_string())),
         _ => Err(ParseError { message: format!("expected a type, got token {:?}", token) }),
     }
@@ -422,11 +419,8 @@ fn parse_identifier(token: &Token) -> Result<String, ParseError> {
 
 fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
     let var_type = match body[0] {
-        Token::Keyword(ref kw) => match kw.as_ref() {
-            "static" => ClassVarType::Static,
-            "field" => ClassVarType::Field,
-            _ => return Err(ParseError { message: format!("unexpected keyword in class var declaration: {}", kw) }),
-        },
+        Token::Keyword(Keyword::Static) => ClassVarType::Static,
+        Token::Keyword(Keyword::Field) => ClassVarType::Field,
         _ => return Err(ParseError { message: format!("unexpected token in class var declaration: {:?}", body[0]) }),
     };
 
@@ -449,7 +443,7 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
         params_list.push(Param { param_type, name });
         let next = peekable.next();
         if let Some(&Token::Symbol(ref s)) = next {
-            if s == "," {
+            if s == &Symbol::Comma {
                 if peekable.peek() == None {
                     return Err(err()); // trailing comma
                 }
@@ -468,7 +462,7 @@ fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
     let mut names = vec![];
     for (index, token) in tokens[1..].iter().enumerate() {
         if index % 2 != 0 {
-            if token == &Token::Symbol(",".to_string()) {
+            if token == &Token::Symbol(Symbol::Comma) {
                 continue;
             } else {
                 return Err(ParseError { message: format!("expected `,`, found {:?}", token) });
@@ -480,6 +474,7 @@ fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
     Ok(Var { names, data_type })
 }
 
+// TODO
 fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
     Ok(Expression { content: tokens.to_vec() })
 }
@@ -490,25 +485,21 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
         message: "missing identifier in let statement".to_string(),
     })?)?;
 
-    let index_expression = if let Some(&&Token::Symbol(ref s)) = peekable.peek() {
-        if s == "[" {
-            let mut balance = 0;
-            let index_expr_tokens = peekable.by_ref().take_while(|t| {
-                if t == &&Token::Symbol("[".to_string()) {
-                    balance += 1;
-                } else if t == &&Token::Symbol("]".to_string()) {
-                    balance -= 1;
-                }
-                balance == 0
-                // todo: is there a way to make this 👇 simpler?
-            }).map(|t| t.clone()).collect::<Vec<Token>>();
+    let index_expression = if let Some(&&Token::Symbol(Symbol::OpenSquare)) = peekable.peek() {
+        let mut balance = 0;
+        let index_expr_tokens = peekable.by_ref().take_while(|t| {
+            if t == &&Token::Symbol(Symbol::OpenSquare) {
+                balance += 1;
+            } else if t == &&Token::Symbol(Symbol::CloseSquare) {
+                balance -= 1;
+            }
+            balance == 0
+            // todo: is there a way to make this 👇 simpler?
+        }).map(|t| t.clone()).collect::<Vec<Token>>();
 
-            Some(parse_expression(&index_expr_tokens)?)
-        } else {
-            None
-        }
+        Some(parse_expression(&index_expr_tokens)?)
     } else {
-        return Err(ParseError { message: "unexpected token in let statement".to_string() });
+        None
     };
 
     let expression = parse_expression(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?;
@@ -545,77 +536,69 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
     let mut parse_index = 0;
     while parse_index < tokens.len() {
         let begin_token = &tokens[parse_index];
-        if let &Token::Keyword(ref kw) = begin_token {
-            match kw.as_ref() {
-                "let" => {
-                    let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
-                    statements.push(
-                        Statement::Let(parse_let_statement(&tokens[parse_index + 1..end_index])?)
-                    );
-                    parse_index = end_index + 1;
-                },
-                "if" => {
-                    let condition_start = parse_index + 1;
-                    let condition_end = condition_start + balance_symbol(&tokens[condition_start..], "(", ")")?;
-                    let if_body_start = condition_end + 1;
-                    let if_body_end = if_body_start + balance_symbol(&tokens[if_body_start..], "{", "}")?;
-                    let (maybe_else_body, end_index) = if
-                        // check to see if there are any more tokens, and if the next one is `else`
-                        if_body_end + 1 < tokens.len() &&
-                        &tokens[if_body_end + 1] == &Token::Keyword("else".to_string())
-                    {
-                        let else_body_start = if_body_end + 2; // hop over `else` token to open bracket
-                        let else_body_end = else_body_start + balance_symbol(&tokens[else_body_start..], "{", "}")?;
-                        (Some(&tokens[else_body_start + 1..else_body_end]), else_body_end)
-                    } else {
-                        (None, if_body_end)
-                    };
-                    statements.push(Statement::If(
-                        parse_if_statement(
-                            &tokens[condition_start..condition_end],
-                            &tokens[if_body_start + 1..if_body_end],
-                            maybe_else_body
-                        )?
-                    ));
-                    parse_index = end_index + 1;
-                },
-                "while" => {
-                    // TODO is there a nice way to dedupe this code from above and elsewhere?
-                    let condition_start = parse_index + 1;
-                    let condition_end = condition_start + balance_symbol(&tokens[condition_start..], "(", ")")?;
-                    let body_start = condition_end + 1;
-                    let body_end = body_start + balance_symbol(&tokens[body_start..], "{", "}")?;
-                    statements.push(Statement::While(
-                        parse_while_statement(
-                            &tokens[condition_start..condition_end],
-                            &tokens[body_start + 1..body_end]
-                        )?
-                    ));
-                    parse_index = body_end + 1;
-                },
-                "do" => {
-                    let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
-                    statements.push(Statement::Do(
-                        // TODO this should be a subroutine call
-                        tokens[parse_index + 1..end_index].to_vec()
-                    ));
-                    parse_index = end_index + 1;
-                },
-                "return" => {
-                    let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(";".to_string()))?;
-                    statements.push(Statement::Return(
-                        parse_expression(&tokens[parse_index + 1..end_index])?
-                    ));
-                    parse_index = end_index + 1;
-                },
-                _ => return Err(ParseError {
-                    message: format!("unexpected keyword to begin statement: {:?}", begin_token)
-                }),
-            }
-        } else {
-            return Err(ParseError {
-                message: format!("expected keyword to begin statement, got {:?}", begin_token)
-            })
+        match begin_token {
+            &Token::Keyword(Keyword::Let) => {
+                let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(Symbol::Semi))?;
+                statements.push(
+                    Statement::Let(parse_let_statement(&tokens[parse_index + 1..end_index])?)
+                );
+                parse_index = end_index + 1;
+            },
+            &Token::Keyword(Keyword::If) => {
+                let condition_start = parse_index + 1;
+                let condition_end = condition_start + balance_symbol(&tokens[condition_start..], Symbol::OpenParen, Symbol::CloseParen)?;
+                let if_body_start = condition_end + 1;
+                let if_body_end = if_body_start + balance_symbol(&tokens[if_body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
+                let (maybe_else_body, end_index) = if
+                // check to see if there are any more tokens, and if the next one is `else`
+                if_body_end + 1 < tokens.len() && &tokens[if_body_end + 1] == &Token::Keyword(Keyword::Else) {
+                    let else_body_start = if_body_end + 2; // hop over `else` token to open bracket
+                    let else_body_end = else_body_start + balance_symbol(&tokens[else_body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
+                    (Some(&tokens[else_body_start + 1..else_body_end]), else_body_end)
+                } else {
+                    (None, if_body_end)
+                };
+                statements.push(Statement::If(
+                    parse_if_statement(
+                        &tokens[condition_start..condition_end],
+                        &tokens[if_body_start + 1..if_body_end],
+                        maybe_else_body
+                    )?
+                ));
+                parse_index = end_index + 1;
+            },
+            &Token::Keyword(Keyword::While) => {
+                // TODO is there a nice way to dedupe this code from above and elsewhere?
+                let condition_start = parse_index + 1;
+                let condition_end = condition_start + balance_symbol(&tokens[condition_start..], Symbol::OpenParen, Symbol::CloseParen)?;
+                let body_start = condition_end + 1;
+                let body_end = body_start + balance_symbol(&tokens[body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
+                statements.push(Statement::While(
+                    parse_while_statement(
+                        &tokens[condition_start..condition_end],
+                        &tokens[body_start + 1..body_end]
+                    )?
+                ));
+                parse_index = body_end + 1;
+            },
+            &Token::Keyword(Keyword::Do) => {
+                let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(Symbol::Semi))?;
+                statements.push(Statement::Do(
+                    // TODO this should be a subroutine call
+                    tokens[parse_index + 1..end_index].to_vec()
+                ));
+                parse_index = end_index + 1;
+            },
+            &Token::Keyword(Keyword::Return) => {
+                let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(Symbol::Semi))?;
+                statements.push(Statement::Return(
+                    parse_expression(&tokens[parse_index + 1..end_index])?
+                ));
+                parse_index = end_index + 1;
+            },
+            _ => return Err(ParseError {
+                message: format!("unexpected keyword to begin statement: {:?}", begin_token)
+            }),
         }
     }
     Ok(statements)
@@ -626,10 +609,10 @@ fn parse_subroutine_body(body: &[Token]) -> Result<SubroutineBody, ParseError> {
     let mut var_declarations = vec![];
     while parse_index < body.len() {
         let current_token = &body[parse_index];
-        if current_token == &Token::Keyword("var".to_string()) {
+        if current_token == &Token::Keyword(Keyword::Var) {
             let declaration_start = parse_index + 1;
             let declaration_end = declaration_start +
-                find_token_index(&body[declaration_start..], Token::Symbol(";".to_string()))?;
+                find_token_index(&body[declaration_start..], Token::Symbol(Symbol::Semi))?;
             var_declarations.push(parse_var(&body[declaration_start..declaration_end])?);
             parse_index = declaration_end + 1;
         } else {
@@ -652,18 +635,14 @@ fn parse_subroutine(
     let subroutine_type_err = ParseError {
         message: format!("expected `constructor`, `function` or `method`, got {:?}", subroutine_type_token),
     };
-    let subroutine_type = if let &Token::Keyword(ref kw) = subroutine_type_token {
-        match kw.as_ref() {
-            "function" => SubroutineType::Function,
-            "constructor" => SubroutineType::Constructor,
-            "method" => SubroutineType::Method,
-            _ => return Err(subroutine_type_err),
-        }
-    } else {
-        return Err(subroutine_type_err);
+    let subroutine_type = match subroutine_type_token {
+        &Token::Keyword(Keyword::Method) => SubroutineType::Method,
+        &Token::Keyword(Keyword::Function) => SubroutineType::Function,
+        &Token::Keyword(Keyword::Constructor) => SubroutineType::Constructor,
+        _ => return Err(subroutine_type_err),
     };
 
-    let return_type = if return_type_token == &Token::Keyword("void".to_string()) {
+    let return_type = if return_type_token == &Token::Keyword(Keyword::Void) {
         SubroutineReturnType::Void
     } else {
         SubroutineReturnType::Type(parse_type(&return_type_token)?)
@@ -688,18 +667,20 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
     let mut parse_index = 0;
     while parse_index < body.len() {
         if let Token::Keyword(ref keyword) = body[parse_index] {
-            if keyword == "static" || keyword == "field" {
-                let end_index = parse_index + find_token_index(&body[parse_index..], Token::Symbol(";".to_string()))?;
+            if keyword == &Keyword::Static || keyword == &Keyword::Field {
+                let end_index = parse_index + find_token_index(&body[parse_index..], Token::Symbol(Symbol::Semi))?;
                 class_vars.push(parse_class_var(&body[parse_index..end_index])?);
                 parse_index = end_index + 1;
-            } else if keyword ==  "constructor" || keyword == "function" || keyword == "method" {
+            } else if keyword == &Keyword::Constructor ||
+                      keyword == &Keyword::Function ||
+                      keyword == &Keyword::Method {
                 let subroutine_type = &body[parse_index];
                 let return_type = &body[parse_index + 1];
                 let name = &body[parse_index + 2];
                 let params_start = parse_index + 4; // + 3 is the open paren
-                let params_end = params_start + find_token_index(&body[params_start..], Token::Symbol(")".to_string()))?;
+                let params_end = params_start + find_token_index(&body[params_start..], Token::Symbol(Symbol::CloseParen))?;
                 let body_start = params_end + 1;
-                let body_end = body_start + balance_symbol(&body[body_start..], "{", "}")?;
+                let body_end = body_start + balance_symbol(&body[body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
                 subroutines.push(
                     parse_subroutine(
                         &subroutine_type,
@@ -725,9 +706,9 @@ fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
-    if tokens[0] == Token::Keyword("class".to_string()) {
+    if tokens[0] == Token::Keyword(Keyword::Class) {
         if let Token::Identifier(ref classname) = tokens[1] {
-            let body_end = balance_symbol(&tokens[2..], "{", "}")?;
+            let body_end = balance_symbol(&tokens[2..], Symbol::OpenCurly, Symbol::CloseCurly)?;
             Ok(parse_class(&classname, &tokens[3..body_end + 2])?)
         } else {
             Err(ParseError {
@@ -749,15 +730,15 @@ mod test {
     fn test_find_token_index() {
         assert_eq!(find_token_index(
             vec![
-                Token::Keyword("static".to_string()),
-                Token::Keyword("int".to_string()),
+                Token::Keyword(Keyword::Static),
+                Token::Keyword(Keyword::Int),
                 Token::Identifier("a".to_string()),
-                Token::Symbol(",".to_string()),
-                Token::Symbol("b".to_string()),
-                Token::Symbol(";".to_string()),
-                Token::Symbol("constructor".to_string()),
+                Token::Symbol(Symbol::Comma),
+                Token::Identifier("b".to_string()),
+                Token::Symbol(Symbol::Semi),
+                Token::Keyword(Keyword::Constructor),
             ].as_slice(),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Semi),
         ).unwrap(), 5);
     }
 
@@ -765,16 +746,16 @@ mod test {
     fn test_balance_symbol_simple() {
         assert_eq!(balance_symbol(
             vec![
-                Token::Symbol("{".to_string()),
-                Token::Keyword("do".to_string()),
+                Token::Symbol(Symbol::OpenCurly),
+                Token::Keyword(Keyword::Do),
                 Token::Identifier("blargh".to_string()),
-                Token::Symbol("(".to_string()),
-                Token::Symbol(")".to_string()),
-                Token::Symbol(";".to_string()),
-                Token::Symbol("}".to_string()),
+                Token::Symbol(Symbol::OpenParen),
+                Token::Symbol(Symbol::CloseParen),
+                Token::Symbol(Symbol::Semi),
+                Token::Symbol(Symbol::CloseCurly),
             ].as_slice(),
-            "{",
-            "}"
+            Symbol::OpenCurly,
+            Symbol::CloseCurly
         ).unwrap(), 6);
     }
 
@@ -782,16 +763,16 @@ mod test {
     fn test_balance_symbol_complex() {
         assert_eq!(balance_symbol(
             vec![
-                Token::Symbol("{".to_string()),
-                Token::Symbol("{".to_string()),
-                Token::Keyword("return".to_string()),
-                Token::IntegerConstant("1".to_string()),
-                Token::Symbol(";".to_string()),
-                Token::Symbol("}".to_string()),
-                Token::Symbol("}".to_string()),
+                Token::Symbol(Symbol::OpenCurly),
+                Token::Symbol(Symbol::OpenCurly),
+                Token::Keyword(Keyword::Return),
+                Token::IntegerConstant(1),
+                Token::Symbol(Symbol::Semi),
+                Token::Symbol(Symbol::CloseCurly),
+                Token::Symbol(Symbol::CloseCurly),
             ].as_slice(),
-            "{",
-            "}"
+            Symbol::OpenCurly,
+            Symbol::CloseCurly
         ).unwrap(), 6);
     }
 
@@ -799,51 +780,51 @@ mod test {
     fn test_parse_outer() {
         let input = vec![
             // class Foo {
-            Token::Keyword("class".to_string()),
+            Token::Keyword(Keyword::Class),
             Token::Identifier("Foo".to_string()),
-            Token::Symbol("{".to_string()),
+            Token::Symbol(Symbol::OpenCurly),
             // static int blargh, argh;
-            Token::Keyword("static".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Static),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("blargh".to_string()),
-            Token::Symbol(",".to_string()),
+            Token::Symbol(Symbol::Comma),
             Token::Identifier("argh".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Semi),
             // method int blargh() {
-            Token::Keyword("method".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Method),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("blargh".to_string()),
-            Token::Symbol("(".to_string()),
-            Token::Symbol(")".to_string()),
-            Token::Symbol("{".to_string()),
+            Token::Symbol(Symbol::OpenParen),
+            Token::Symbol(Symbol::CloseParen),
+            Token::Symbol(Symbol::OpenCurly),
             // if (true) {
-            Token::Keyword("if".to_string()),
-            Token::Symbol("(".to_string()),
-            Token::Keyword("true".to_string()),
-            Token::Symbol(")".to_string()),
-            Token::Symbol("{".to_string()),
+            Token::Keyword(Keyword::If),
+            Token::Symbol(Symbol::OpenParen),
+            Token::Keyword(Keyword::True),
+            Token::Symbol(Symbol::CloseParen),
+            Token::Symbol(Symbol::OpenCurly),
             // do draw();
-            Token::Keyword("do".to_string()),
+            Token::Keyword(Keyword::Do),
             Token::Identifier("draw".to_string()),
-            Token::Symbol("(".to_string()),
-            Token::Symbol(")".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::OpenParen),
+            Token::Symbol(Symbol::CloseParen),
+            Token::Symbol(Symbol::Semi),
             // } else {
-            Token::Symbol("}".to_string()),
-            Token::Keyword("else".to_string()),
-            Token::Symbol("{".to_string()),
+            Token::Symbol(Symbol::CloseCurly),
+            Token::Keyword(Keyword::Else),
+            Token::Symbol(Symbol::OpenCurly),
             // do draw2();
-            Token::Keyword("do".to_string()),
+            Token::Keyword(Keyword::Do),
             Token::Identifier("draw2".to_string()),
-            Token::Symbol("(".to_string()),
-            Token::Symbol(")".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::OpenParen),
+            Token::Symbol(Symbol::CloseParen),
+            Token::Symbol(Symbol::Semi),
             // } // end else
-            Token::Symbol("}".to_string()),
+            Token::Symbol(Symbol::CloseCurly),
             // } // end method
-            Token::Symbol("}".to_string()),
+            Token::Symbol(Symbol::CloseCurly),
             // } // end class
-            Token::Symbol("}".to_string()),
+            Token::Symbol(Symbol::CloseCurly),
         ];
         let parsed = parse(&input);
         assert!(parsed.is_ok());
@@ -852,9 +833,9 @@ mod test {
     #[test]
     fn test_parse_outer_errors() {
         let bad_input = vec![
-            Token::Keyword("class".to_string()),
-            Token::Symbol("{".to_string()),
-            Token::Symbol("}".to_string()),
+            Token::Keyword(Keyword::Class),
+            Token::Symbol(Symbol::OpenCurly),
+            Token::Symbol(Symbol::CloseCurly),
         ];
         match parse(&bad_input) {
             Err(e) => assert!(e.message.starts_with("expected an identifier after `class`")),
@@ -862,10 +843,10 @@ mod test {
         }
 
         let more_bad_input = vec![
-            Token::Keyword("var".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Var),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("foo".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Semi),
         ];
         match parse(&more_bad_input) {
             Err(e) => assert!(e.message.starts_with("expected first token in file to be `class` keyword")),
@@ -876,8 +857,8 @@ mod test {
     #[test]
     fn test_parse_class_var() {
         let input = vec![
-            Token::Keyword("static".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Static),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("foo".to_string()),
         ];
         assert_eq!(parse_class_var(&input).unwrap(), ClassVar {
@@ -889,10 +870,10 @@ mod test {
         });
 
         let multiple_declarations = vec![
-            Token::Keyword("field".to_string()),
+            Token::Keyword(Keyword::Field),
             Token::Identifier("MyCustomClass".to_string()),
             Token::Identifier("foo".to_string()),
-            Token::Symbol(",".to_string()),
+            Token::Symbol(Symbol::Comma),
             Token::Identifier("bar".to_string()),
         ];
         assert_eq!(parse_class_var(&multiple_declarations).unwrap(), ClassVar {
@@ -907,11 +888,11 @@ mod test {
     #[test]
     fn test_parse_let_statements() {
         let let_statement = vec![
-            Token::Keyword("let".to_string()),
+            Token::Keyword(Keyword::Let),
             Token::Identifier("x".to_string()),
-            Token::Symbol("=".to_string()),
-            Token::IntegerConstant("2".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Eq),
+            Token::IntegerConstant(2),
+            Token::Symbol(Symbol::Semi),
         ];
         assert!(parse_statements(&let_statement).is_ok());
 
@@ -921,14 +902,14 @@ mod test {
         assert!(parse_statements(&two_let_statements).is_ok());
 
         let complex_let = vec![
-            Token::Keyword("let".to_string()),
+            Token::Keyword(Keyword::Let),
             Token::Identifier("x".to_string()),
-            Token::Symbol("[".to_string()),
-            Token::IntegerConstant("2".to_string()),
-            Token::Symbol("]".to_string()),
-            Token::Symbol("=".to_string()),
-            Token::IntegerConstant("2".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::OpenSquare),
+            Token::IntegerConstant(2),
+            Token::Symbol(Symbol::CloseSquare),
+            Token::Symbol(Symbol::Eq),
+            Token::IntegerConstant(2),
+            Token::Symbol(Symbol::Semi),
         ];
         assert!(parse_statements(&complex_let).is_ok());
     }
@@ -937,19 +918,19 @@ mod test {
     fn test_parse_while_statements() {
         let while_statement = vec![
             // while (x) {
-            Token::Keyword("while".to_string()),
-            Token::Symbol("(".to_string()),
+            Token::Keyword(Keyword::While),
+            Token::Symbol(Symbol::OpenParen),
             Token::Identifier("x".to_string()),
-            Token::Symbol(")".to_string()),
-            Token::Symbol("{".to_string()),
+            Token::Symbol(Symbol::CloseParen),
+            Token::Symbol(Symbol::OpenCurly),
             // let y = 2;
-            Token::Keyword("let".to_string()),
+            Token::Keyword(Keyword::Let),
             Token::Identifier("y".to_string()),
-            Token::Symbol("=".to_string()),
-            Token::IntegerConstant("2".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Eq),
+            Token::IntegerConstant(2),
+            Token::Symbol(Symbol::Semi),
             // } // end while
-            Token::Symbol("}".to_string()),
+            Token::Symbol(Symbol::CloseCurly),
         ];
         assert!(parse_statements(&while_statement).is_ok());
     }
@@ -960,7 +941,7 @@ mod test {
         assert_eq!(parse_params(&vec![]).unwrap(), vec![]);
 
         let one_param = vec![
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
         ];
         assert_eq!(
@@ -969,13 +950,13 @@ mod test {
         );
 
         let three_params = vec![
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
-            Token::Symbol(",".to_string()),
+            Token::Symbol(Symbol::Comma),
             Token::Identifier("Blargh".to_string()),
             Token::Identifier("y1".to_string()),
-            Token::Symbol(",".to_string()),
-            Token::Keyword("char".to_string()),
+            Token::Symbol(Symbol::Comma),
+            Token::Keyword(Keyword::Char),
             Token::Identifier("y2".to_string()),
         ];
         assert_eq!(
@@ -994,9 +975,9 @@ mod test {
         assert!(parse_params(missing_identifier).is_err());
 
         let wrong_symbol = vec![
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Semi),
             Token::Identifier("Blargh".to_string()),
             Token::Identifier("y1".to_string()),
         ];
@@ -1007,28 +988,28 @@ mod test {
     fn test_parse_subroutine_body() {
         let input = vec![
             // var int y, x;
-            Token::Keyword("var".to_string()),
-            Token::Keyword("int".to_string()),
+            Token::Keyword(Keyword::Var),
+            Token::Keyword(Keyword::Int),
             Token::Identifier("y".to_string()),
-            Token::Symbol(",".to_string()),
+            Token::Symbol(Symbol::Comma),
             Token::Identifier("x".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Semi),
             // var Blargh z;
-            Token::Keyword("var".to_string()),
+            Token::Keyword(Keyword::Var),
             Token::Identifier("Blargh".to_string()),
             Token::Identifier("z".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Symbol(Symbol::Semi),
             // if (x) {
-            Token::Keyword("if".to_string()),
-            Token::Symbol("(".to_string()),
+            Token::Keyword(Keyword::If),
+            Token::Symbol(Symbol::OpenParen),
             Token::Identifier("x".to_string()),
-            Token::Symbol(")".to_string()),
-            Token::Symbol("{".to_string()),
+            Token::Symbol(Symbol::CloseParen),
+            Token::Symbol(Symbol::OpenCurly),
             // return;
-            Token::Keyword("return".to_string()),
-            Token::Symbol(";".to_string()),
+            Token::Keyword(Keyword::Return),
+            Token::Symbol(Symbol::Semi),
             // } // end if
-            Token::Symbol("}".to_string()),
+            Token::Symbol(Symbol::CloseCurly),
         ];
         assert!(parse_subroutine_body(&input).is_ok());
     }
@@ -1036,28 +1017,28 @@ mod test {
     #[test]
     fn test_parse_subroutine() {
         let parsed = parse_subroutine(
-            &Token::Keyword("function".to_string()),
-            &Token::Keyword("int".to_string()),
+            &Token::Keyword(Keyword::Function),
+            &Token::Keyword(Keyword::Int),
             &Token::Identifier("blargh".to_string()),
             &vec![
-                Token::Keyword("int".to_string()),
+                Token::Keyword(Keyword::Int),
                 Token::Identifier("x".to_string()),
             ],
             &vec![
-                Token::Keyword("var".to_string()),
-                Token::Keyword("int".to_string()),
+                Token::Keyword(Keyword::Var),
+                Token::Keyword(Keyword::Int),
                 Token::Identifier("y".to_string()),
-                Token::Symbol(";".to_string()),
-                Token::Keyword("let".to_string()),
+                Token::Symbol(Symbol::Semi),
+                Token::Keyword(Keyword::Let),
                 Token::Identifier("y".to_string()),
-                Token::Symbol("=".to_string()),
-                Token::IntegerConstant("1".to_string()),
-                Token::Symbol(";".to_string()),
-                Token::Keyword("return".to_string()),
+                Token::Symbol(Symbol::Eq),
+                Token::IntegerConstant(1),
+                Token::Symbol(Symbol::Semi),
+                Token::Keyword(Keyword::Return),
                 Token::Identifier("x".to_string()),
-                Token::Symbol("+".to_string()),
+                Token::Symbol(Symbol::Plus),
                 Token::Identifier("y".to_string()),
-                Token::Symbol(";".to_string()),
+                Token::Symbol(Symbol::Semi),
             ]
         );
         assert!(parsed.is_ok());
