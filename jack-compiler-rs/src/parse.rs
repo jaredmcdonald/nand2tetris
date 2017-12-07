@@ -274,6 +274,21 @@ impl fmt::Display for ClassVarType {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum ClassBodyItem {
+    ClassVar(ClassVar),
+    Subroutine(Subroutine),
+}
+
+impl fmt::Display for ClassBodyItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &ClassBodyItem::ClassVar(ref cv) => write!(f, "{}", cv),
+            &ClassBodyItem::Subroutine(ref sr) => write!(f, "{}", sr),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Type {
     Int,
     Char,
@@ -330,16 +345,12 @@ impl fmt::Display for Var {
 #[derive(Debug, PartialEq)]
 pub struct Class {
     name: String,
-    class_vars: Vec<ClassVar>,
-    subroutines: Vec<Subroutine>,
+    body: Vec<ClassBodyItem>,
 }
 
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let class_vars = self.class_vars.iter().map(|cv| format!("{}", cv))
-            .collect::<Vec<String>>()
-            .join("\n");
-        let subroutines = self.subroutines.iter().map(|s| format!("{}", s))
+        let body = self.body.iter().map(|item| format!("{}", item))
             .collect::<Vec<String>>()
             .join("\n");
         write!(f,
@@ -348,12 +359,10 @@ impl fmt::Display for Class {
                 <identifier>{}</identifier>
                 <symbol>{{</symbol>
                     {}
-                    {}
                 <symbol>}}</symbol>
             </class>",
             self.name,
-            class_vars,
-            subroutines
+            body
         )
     }
 }
@@ -488,10 +497,10 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
     let index_expression = if let Some(&&Token::Symbol(Symbol::OpenSquare)) = peekable.peek() {
         let mut balance = 0;
         let index_expr_tokens = peekable.by_ref().take_while(|t| {
-            if t == &&Token::Symbol(Symbol::OpenSquare) {
-                balance += 1;
-            } else if t == &&Token::Symbol(Symbol::CloseSquare) {
-                balance -= 1;
+            match t {
+                &&Token::Symbol(Symbol::OpenSquare) => balance += 1,
+                &&Token::Symbol(Symbol::CloseSquare) => balance -= 1,
+                _ => (),
             }
             balance == 0
             // todo: is there a way to make this 👇 simpler?
@@ -661,55 +670,95 @@ fn parse_subroutine(
     })
 }
 
-fn parse_class(name: &str, body: &[Token]) -> Result<Class, ParseError> {
-    let mut class_vars = vec![];
-    let mut subroutines = vec![];
-    let mut parse_index = 0;
-    while parse_index < body.len() {
-        if let Token::Keyword(ref keyword) = body[parse_index] {
-            if keyword == &Keyword::Static || keyword == &Keyword::Field {
-                let end_index = parse_index + find_token_index(&body[parse_index..], Token::Symbol(Symbol::Semi))?;
-                class_vars.push(parse_class_var(&body[parse_index..end_index])?);
-                parse_index = end_index + 1;
-            } else if keyword == &Keyword::Constructor ||
-                      keyword == &Keyword::Function ||
-                      keyword == &Keyword::Method {
-                let subroutine_type = &body[parse_index];
-                let return_type = &body[parse_index + 1];
-                let name = &body[parse_index + 2];
-                let params_start = parse_index + 4; // + 3 is the open paren
-                let params_end = params_start + find_token_index(&body[params_start..], Token::Symbol(Symbol::CloseParen))?;
-                let body_start = params_end + 1;
-                let body_end = body_start + balance_symbol(&body[body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
-                subroutines.push(
-                    parse_subroutine(
-                        &subroutine_type,
-                        &return_type,
-                        &name,
-                        &body[params_start..params_end],
-                        &body[body_start + 1..body_end]
-                    )?
-                );
-                parse_index = body_end + 1;
-            } else {
+fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> {
+    let mut peekable = tokens.iter().peekable();
+
+    if peekable.peek().is_none() {
+        // base case, no tokens left
+        return Ok(vec![]);
+    }
+
+    if let Some(&&Token::Keyword(ref keyword)) = peekable.peek() {
+        if keyword == &Keyword::Static || keyword == &Keyword::Field {
+            let class_var_tokens = peekable.by_ref()
+                .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
+                .map(|t| t.clone()).collect::<Vec<Token>>();
+            let mut result = vec![
+                ClassBodyItem::ClassVar(
+                    parse_class_var(&class_var_tokens[..class_var_tokens.len() - 2])? // omit semicolon
+                )
+            ];
+            result.extend(
+                parse_class_body(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?
+            );
+            return Ok(result);
+        } else if keyword == &Keyword::Constructor ||
+                  keyword == &Keyword::Function ||
+                  keyword == &Keyword::Method {
+
+            let subroutine_type_token = peekable.next().unwrap(); // we've already peeked this token
+            let return_type_token = peekable.next().ok_or(
+                ParseError { message: "expected return type in subroutine declaration".to_string() }
+            )?;
+            let name_token = peekable.next().ok_or(
+                ParseError { message: "expected name in subroutine declaration".to_string() }
+            )?;
+
+            if peekable.next() != Some(&&Token::Symbol(Symbol::OpenParen)) {
                 return Err(ParseError {
-                    message: format!("unexpected keyword in class body: {}", keyword),
+                    message: "expected `(` to open parameters list".to_string(),
                 });
             }
-        } else {
-            return Err(ParseError {
-                message: format!("unexpected token in class body: {:?}", body[parse_index]),
-            });
+            let params_tokens = peekable.by_ref()
+                .take_while(|t| t != &&Token::Symbol(Symbol::CloseParen))
+                .map(|t| t.clone()).collect::<Vec<Token>>();
+
+            if peekable.next() != Some(&&Token::Symbol(Symbol::OpenCurly)) {
+                return Err(ParseError {
+                    message: "expected `{` to open subroutine body".to_string(),
+                });
+            }
+
+            let mut curly_balance = 1;
+            let body_tokens = peekable.by_ref().take_while(|t| {
+                match t {
+                    &&Token::Symbol(Symbol::OpenCurly) => curly_balance += 1,
+                    &&Token::Symbol(Symbol::CloseCurly) => curly_balance -= 1,
+                    _ => ()
+                }
+                curly_balance != 0
+            }).map(|t| t.clone()).collect::<Vec<Token>>();
+
+            let mut result = vec![
+                ClassBodyItem::Subroutine(
+                    parse_subroutine(
+                        &subroutine_type_token,
+                        &return_type_token,
+                        &name_token,
+                        &params_tokens,
+                        &body_tokens
+                    )?
+                )
+            ];
+            result.extend(
+                parse_class_body(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?
+            );
+            return Ok(result);
         }
     }
-    Ok(Class { name: name.to_string(), class_vars, subroutines })
+    Err(ParseError {
+        message: format!("unexpected token in class body: {:?}", tokens[0]),
+    })
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
     if tokens[0] == Token::Keyword(Keyword::Class) {
         if let Token::Identifier(ref classname) = tokens[1] {
             let body_end = balance_symbol(&tokens[2..], Symbol::OpenCurly, Symbol::CloseCurly)?;
-            Ok(parse_class(&classname, &tokens[3..body_end + 2])?)
+            Ok(Class {
+                name: classname.to_string(),
+                body: parse_class_body(&tokens[3..body_end + 2])?,
+            })
         } else {
             Err(ParseError {
                 message: format!("expected an identifier after `class`, got {:?}", tokens[1]),
