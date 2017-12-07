@@ -436,30 +436,29 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
 }
 
 fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
-    let mut i = 0;
     let mut params_list = vec![];
-    let len = tokens.len();
-    let err = ParseError { message: format!("malformed param list: {:?}", tokens) };
-    while i < len { // this is just terrible
-        if len - i < 2 {
-            return Err(err); // too few tokens
+    let mut peekable = tokens.iter().peekable();
+    let err = || ParseError { message: format!("malformed param list: {:?}", tokens) };
+    loop {
+        let first = peekable.next();
+        if first == None {
+            break;
         }
-
-        let param_type = parse_type(&tokens[i])?;
-        let name = parse_identifier(&tokens[i + 1])?;
+        let param_type = parse_type(first.unwrap())?;
+        let name = parse_identifier(peekable.next().ok_or(err())?)?;
         params_list.push(Param { param_type, name });
-
-        if len - i == 2 {
-            break; // done!
-        } else if tokens[i + 2] == Token::Symbol(",".to_string()) {
-            if len > i + 3 {
-                i += 3; // advance the loop
-            } else {
-                return Err(err);
+        let next = peekable.next();
+        if let Some(&Token::Symbol(ref s)) = next {
+            if s == "," {
+                if peekable.peek() == None {
+                    return Err(err()); // trailing comma
+                }
+                continue;
             }
-        } else {
-            return Err(err);
+        } else if next == None {
+            break;
         }
+        return Err(err());
     }
     Ok(params_list)
 }
@@ -494,13 +493,14 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
     let index_expression = if let Some(&&Token::Symbol(ref s)) = peekable.peek() {
         if s == "[" {
             let mut balance = 0;
-            let index_expr_tokens = peekable.clone().take_while(|t| {
+            let index_expr_tokens = peekable.by_ref().take_while(|t| {
                 if t == &&Token::Symbol("[".to_string()) {
                     balance += 1;
                 } else if t == &&Token::Symbol("]".to_string()) {
                     balance -= 1;
                 }
                 balance == 0
+                // todo: is there a way to make this 👇 simpler?
             }).map(|t| t.clone()).collect::<Vec<Token>>();
 
             Some(parse_expression(&index_expr_tokens)?)
@@ -511,9 +511,7 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
         return Err(ParseError { message: "unexpected token in let statement".to_string() });
     };
 
-    let after_equals = peekable.skip_while(|t| t != &&Token::Symbol("=".to_string()));
-    let expression_tokens = after_equals.map(|t| t.clone()).collect::<Vec<Token>>();
-    let expression = parse_expression(&expression_tokens)?;
+    let expression = parse_expression(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?;
     Ok(LetStatement { name, expression, index_expression })
 }
 
