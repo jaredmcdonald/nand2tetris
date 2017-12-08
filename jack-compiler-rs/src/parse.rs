@@ -41,7 +41,7 @@ impl fmt::Display for Statement {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnaryOp {
     Neg,
     Not,
@@ -56,7 +56,7 @@ impl fmt::Display for UnaryOp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOp {
     Plus,
     Minus,
@@ -85,7 +85,7 @@ impl fmt::Display for BinaryOp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct SubroutineCall {
     parent_name: Option<String>,
     subroutine_name: String,
@@ -94,7 +94,7 @@ pub struct SubroutineCall {
 
 impl fmt::Display for SubroutineCall {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let parent_prefix = if let Some(p) = self.parent_name {
+        let parent_prefix = if let Some(ref p) = self.parent_name {
             format!("<identifier>{}</identifier>\n<symbol>.</symbol>\n", p)
         } else { "".to_string() };
         let param_list = self.parameters.iter()
@@ -128,7 +128,7 @@ impl TryInto<BinaryOp> for Symbol {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ExpressionItem {
     Term(Term),
     Operation(BinaryOp),
@@ -143,7 +143,7 @@ impl fmt::Display for ExpressionItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Term {
     IntegerConstant(u16),
     StringConstant(String),
@@ -175,7 +175,7 @@ impl fmt::Display for Term {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Expression(Vec<ExpressionItem>);
 
 impl fmt::Display for Expression {
@@ -684,7 +684,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
             let next = peekable.by_ref().peek();
             if next == Some(&&Token::Symbol(Symbol::OpenSquare)) {
                 // parse index expr
-                let balance = 0; // already consumed the open paren
+                let mut balance = 0; // already consumed the open paren
                 let index_expr_tokens = peekable.by_ref().take_while(|t| {
                     match t {
                         &&Token::Symbol(Symbol::OpenSquare) => balance += 1,
@@ -737,8 +737,8 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 let rest = parse_expression_inner(
                     &peekable.map(|t| t.clone()).collect::<Vec<Token>>()
                 )?;
-                let next_term = if let ExpressionItem::Term(t) = rest[0] {
-                    t
+                let next_term = if let ExpressionItem::Term(ref t) = rest[0] {
+                    t.clone()
                 } else {
                     return Err(ParseError {
                         message: "expected term after unary op".to_string(),
