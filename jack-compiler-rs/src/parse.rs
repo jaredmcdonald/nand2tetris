@@ -21,8 +21,7 @@ impl fmt::Display for Statement {
                 write!(f,
                     "<doStatement>
                         <keyword>do</keyword>
-                        {}
-                        <symbol>;</symbol>
+                        {}<symbol>;</symbol>
                     </doStatement>",
                     s
                 )
@@ -50,8 +49,8 @@ pub enum UnaryOp {
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", match self {
-            &UnaryOp::Neg => Symbol::Minus,
-            &UnaryOp::Not => Symbol::Not,
+            &UnaryOp::Neg => Token::Symbol(Symbol::Minus),
+            &UnaryOp::Not => Token::Symbol(Symbol::Not),
         })
     }
 }
@@ -72,15 +71,15 @@ pub enum BinaryOp {
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", match self {
-            &BinaryOp::Plus => Symbol::Plus,
-            &BinaryOp::Minus => Symbol::Minus,
-            &BinaryOp::Mult => Symbol::Mult,
-            &BinaryOp::Div => Symbol::Div,
-            &BinaryOp::And => Symbol::Amp,
-            &BinaryOp::Or => Symbol::Pipe,
-            &BinaryOp::Lt => Symbol::Lt,
-            &BinaryOp::Gt => Symbol::Gt,
-            &BinaryOp::Eq => Symbol::Eq,
+            &BinaryOp::Plus => Token::Symbol(Symbol::Plus),
+            &BinaryOp::Minus => Token::Symbol(Symbol::Minus),
+            &BinaryOp::Mult => Token::Symbol(Symbol::Mult),
+            &BinaryOp::Div => Token::Symbol(Symbol::Div),
+            &BinaryOp::And => Token::Symbol(Symbol::Amp),
+            &BinaryOp::Or => Token::Symbol(Symbol::Pipe),
+            &BinaryOp::Lt => Token::Symbol(Symbol::Lt),
+            &BinaryOp::Gt => Token::Symbol(Symbol::Gt),
+            &BinaryOp::Eq => Token::Symbol(Symbol::Eq),
         })
     }
 }
@@ -102,8 +101,8 @@ impl fmt::Display for SubroutineCall {
             .collect::<Vec<String>>().join("<symbol>,</symbol>\n");
         write!(f, "{}<identifier>{}</identifier>
         <symbol>(</symbol>
-        <expressionList>{}
-        </expressionList>
+        <expressionList>
+        {}</expressionList>
         <symbol>)</symbol>
         ", parent_prefix, self.subroutine_name, param_list)
     }
@@ -137,8 +136,8 @@ pub enum ExpressionItem {
 impl fmt::Display for ExpressionItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &ExpressionItem::Term(ref t) => write!(f, "<term>\n{}\n</term>", t),
-            &ExpressionItem::Operation(ref o) => write!(f, "<op>\n{}\n</op>", o),
+            &ExpressionItem::Term(ref t) => write!(f, "{}", t),
+            &ExpressionItem::Operation(ref o) => write!(f, "{}", o),
         }
     }
 }
@@ -157,18 +156,18 @@ pub enum Term {
 
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<term>\n{}\n</term>", match self {
-            &Term::IntegerConstant(ref i) => format!("<integerConstant>{}</integerConstant>", i),
-            &Term::StringConstant(ref s) => format!("<stringConstant>{}</stringConstant>", s),
-            &Term::KeywordConstant(ref k) => format!("{}", k),
-            &Term::VarName(ref v) => format!("<identifier>{}</identifier>", v),
-            &Term::Unary(ref op, ref term) => format!("{}\n{}", op, term),
-            &Term::Parenthetical(ref e) => format!("<symbol>(</symbol>\n{}\n<symbol>)</symbol>", e),
+        write!(f, "<term>\n{}</term>", match self {
+            &Term::IntegerConstant(ref i) => format!("<integerConstant>{}</integerConstant>\n", i),
+            &Term::StringConstant(ref s) => format!("<stringConstant>{}</stringConstant>\n", s),
+            &Term::KeywordConstant(ref k) => format!("<keyword>{}</keyword>\n", k),
+            &Term::VarName(ref v) => format!("<identifier>{}</identifier>\n", v),
+            &Term::Unary(ref op, ref term) => format!("{}\n{}\n", op, term),
+            &Term::Parenthetical(ref e) => format!("<symbol>(</symbol>\n{}\n<symbol>)</symbol>\n", e),
             &Term::IndexExpr(ref var_name, ref expr) => format!(
                     "<identifier>{}</identifier>
                     <symbol>[</symbol>
                     {}
-                    <symbol>]</symbol>",
+                    <symbol>]</symbol>\n",
                 var_name, expr),
             &Term::SubroutineCall(ref s) => format!("{}", s),
         })
@@ -180,8 +179,8 @@ pub struct Expression(Vec<ExpressionItem>);
 
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let content = self.0.iter().map(|t| format!("{}", t)).collect::<String>();
-        write!(f, "<expression>\n{}\n</expression>", content)
+        let content = self.0.iter().map(|t| format!("{}\n", t)).collect::<String>();
+        write!(f, "<expression>\n{}</expression>", content)
     }
 }
 
@@ -193,7 +192,7 @@ pub struct WhileStatement {
 
 impl fmt::Display for WhileStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let body = self.body.iter().map(|t| format!("{}", t)).collect::<String>();
+        let body = self.body.iter().map(|t| format!("{}", t)).collect::<Vec<_>>().join("\n");
         write!(f,
             "<keyword>while</keyword>
             <symbol>(</symbol>
@@ -219,16 +218,16 @@ pub struct IfStatement {
 
 impl fmt::Display for IfStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let if_body = self.if_body.iter().map(|t| format!("{}", t)).collect::<String>();
+        let if_body = self.if_body.iter().map(|t| format!("{}", t)).collect::<Vec<_>>().join("\n");
         let maybe_else = if let Some(ref else_body) = self.else_body {
             format!(
-                "<keyword>else</keyword>
+                "\n<keyword>else</keyword>
                 <symbol>{{</symbol>
                 <statements>
                     {}
                 </statements>
                 <symbol>}}</symbol>",
-                else_body.iter().map(|t| format!("{}", t)).collect::<String>()
+                else_body.iter().map(|t| format!("{}", t)).collect::<Vec<_>>().join("\n")
             )
         } else { "".to_string() };
         write!(f,
@@ -240,8 +239,7 @@ impl fmt::Display for IfStatement {
             <statements>
                 {}
             </statements>
-            <symbol>}}</symbol>
-            {}",
+            <symbol>}}</symbol>{}",
             self.condition,
             if_body,
             maybe_else
@@ -330,15 +328,15 @@ impl fmt::Display for SubroutineBody {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let var_declarations = self.var_declarations.iter().map(|v| {
             format!(
-                "<varDec>
+                "\n<varDec>
                     <keyword>var</keyword>
                     {}
                     <symbol>;</symbol>
                 </varDec>",
                 v
             )
-        }).collect::<Vec<String>>().join("\n");
-        let statements = self.statements.iter().map(|s| format!("{}", s)).collect::<Vec<String>>().join("\n");
+        }).collect::<String>();
+        let statements = self.statements.iter().map(|s| format!("{}", s)).collect::<Vec<_>>().join("\n");
         write!(f,
             "<subroutineBody>
                 <symbol>{{</symbol>{}
@@ -364,9 +362,9 @@ pub struct Subroutine {
 
 impl fmt::Display for Subroutine {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let param_list_body = self.params.iter().map(|p| format!("{}", p))
+        let param_list_body = self.params.iter().map(|p| format!("{}\n", p))
             .collect::<Vec<String>>()
-            .join("\n<symbol>,</symbol>\n");
+            .join("<symbol>,</symbol>\n");
 
         write!(f,
             "<subroutineDec>
@@ -374,8 +372,8 @@ impl fmt::Display for Subroutine {
                 {}
                 <identifier>{}</identifier>
                 <symbol>(</symbol>
-                    <parameterList>{}
-                    </parameterList>
+                    <parameterList>
+                    {}</parameterList>
                 <symbol>)</symbol>
                 {}
             </subroutineDec>",
