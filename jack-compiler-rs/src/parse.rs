@@ -624,7 +624,8 @@ fn parse_expression_list(tokens: &[Token]) -> Result<Vec<Expression>, ParseError
         if token == &Token::Symbol(Symbol::Comma) {
             expression_tokens.push(vec![])
         } else {
-            expression_tokens[expression_tokens.len() - 2].push(token.clone());
+            let index = expression_tokens.len() - 2;
+            expression_tokens[index].push(token.clone());
         }
     }
     Ok(expression_tokens.iter().map(|ts| parse_expression(ts)).collect::<Result<Vec<Expression>, ParseError>>()?)
