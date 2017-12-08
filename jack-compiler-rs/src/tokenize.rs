@@ -1,14 +1,195 @@
 use std::fmt;
 use std::num::ParseIntError;
+use std::collections::HashMap;
+use std::convert::TryInto;
 use regex::{Regex, Captures, self};
+
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
+pub enum Keyword {
+    Class,
+    Constructor,
+    Function,
+    Method,
+    Field,
+    Static,
+    Var,
+    Int,
+    Char,
+    Boolean,
+    Void,
+    True,
+    False,
+    Null,
+    This,
+    Let,
+    Do,
+    If,
+    Else,
+    While,
+    Return,
+}
+
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
+pub enum Symbol {
+    OpenSquare,
+    CloseSquare,
+    OpenCurly,
+    CloseCurly,
+    OpenParen,
+    CloseParen,
+    Period,
+    Comma,
+    Semi,
+    Plus,
+    Minus,
+    Mult,
+    Div,
+    Amp,
+    Pipe,
+    Lt,
+    Gt,
+    Eq,
+    Not,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct KeywordError {
+    message: String,
+}
+
+impl TryInto<Keyword> for String {
+    type Error = KeywordError;
+
+    fn try_into(self) -> Result<Keyword, Self::Error> {
+        if let Some(kw) = STRING_TO_KEYWORD.get(&self) {
+            Ok(*kw)
+        } else {
+            Err(Self::Error { message: format!("unrecognized keyword `{}`", self) })
+        }
+    }
+}
+
+
+impl fmt::Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", KEYWORD_TO_STRING.get(self).unwrap())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SymbolError {
+    message: String,
+}
+
+impl TryInto<Symbol> for String {
+    type Error = KeywordError;
+
+    fn try_into(self) -> Result<Symbol, Self::Error> {
+        if let Some(kw) = STRING_TO_SYMBOL.get(&self) {
+            Ok(*kw)
+        } else {
+            Err(Self::Error { message: format!("unrecognized symbol `{}`", self) })
+        }
+    }
+}
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", SYMBOL_TO_STRING.get(self).unwrap())
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
-    Keyword(String),
-    Symbol(String),
+    Keyword(Keyword),
+    Symbol(Symbol),
     Identifier(String),
     StringConstant(String),
-    IntegerConstant(String),
+    IntegerConstant(u16),
+}
+
+lazy_static! {
+    static ref STRING_TO_KEYWORD: HashMap<String, Keyword> = {
+        let mut map = HashMap::new();
+        for &(s, k) in get_keyword_pairs().iter() {
+            map.insert(s.to_string(), k);
+        }
+        map
+    };
+
+    static ref KEYWORD_TO_STRING: HashMap<Keyword, String> = {
+        let mut map = HashMap::new();
+        for &(s, k) in get_keyword_pairs().iter() {
+            map.insert(k, s.to_string());
+        }
+        map
+    };
+
+    static ref STRING_TO_SYMBOL: HashMap<String, Symbol> = {
+        let mut map = HashMap::new();
+        for &(string, sym) in get_symbol_pairs().iter() {
+            map.insert(string.to_string(), sym);
+        }
+        map
+    };
+
+    static ref SYMBOL_TO_STRING: HashMap<Symbol, String> = {
+        let mut map = HashMap::new();
+        for &(string, sym) in get_symbol_pairs().iter() {
+            map.insert(sym, string.to_string());
+        }
+        map
+    };
+}
+
+fn get_symbol_pairs() -> [(&'static str, Symbol); 19] {
+    [
+        ("[", Symbol::OpenSquare),
+        ("]", Symbol::CloseSquare),
+        ("{", Symbol::OpenCurly),
+        ("}", Symbol::CloseCurly),
+        ("(", Symbol::OpenParen),
+        (")", Symbol::CloseParen),
+        (".", Symbol::Period),
+        (",", Symbol::Comma),
+        (";", Symbol::Semi),
+        ("+", Symbol::Plus),
+        ("-", Symbol::Minus),
+        ("*", Symbol::Mult),
+        ("/", Symbol::Div),
+        ("&", Symbol::Amp),
+        ("|", Symbol::Pipe),
+        ("<", Symbol::Lt),
+        (">", Symbol::Gt),
+        ("=", Symbol::Eq),
+        ("~", Symbol::Not),
+    ]
+}
+
+fn get_keyword_pairs() -> [(&'static str, Keyword); 21] {
+    [
+        ("class", Keyword::Class),
+        ("constructor", Keyword::Constructor),
+        ("function", Keyword::Function),
+        ("method", Keyword::Method),
+        ("field", Keyword::Field),
+        ("static", Keyword::Static),
+        ("var", Keyword::Var),
+        ("int", Keyword::Int),
+        ("char", Keyword::Char),
+        ("boolean", Keyword::Boolean),
+        ("void", Keyword::Void),
+        ("true", Keyword::True),
+        ("false", Keyword::False),
+        ("null", Keyword::Null),
+        ("this", Keyword::This),
+        ("let", Keyword::Let),
+        ("do", Keyword::Do),
+        ("if", Keyword::If),
+        ("else", Keyword::Else),
+        ("while", Keyword::While),
+        ("return", Keyword::Return),
+    ]
 }
 
 // XML formatting for the book's tokenization test cases
@@ -18,11 +199,11 @@ impl fmt::Display for Token {
             &Token::Keyword(ref v) => ("keyword", v.to_string()),
             &Token::Symbol(ref v) => ("symbol", {
                 // need to escape some symbols for xml 🙄
-                if v == "<" {
+                if v == &Symbol::Lt {
                     "&lt;".to_string()
-                } else if v == ">" {
+                } else if v == &Symbol::Gt {
                     "&gt;".to_string()
-                } else if v == "&" {
+                } else if v == &Symbol::Amp {
                     "&amp;".to_string()
                 } else {
                     v.to_string()
@@ -30,7 +211,7 @@ impl fmt::Display for Token {
             }),
             &Token::Identifier(ref v) => ("identifier", v.to_string()),
             &Token::StringConstant(ref v) => ("stringConstant", v.to_string()),
-            &Token::IntegerConstant(ref v) => ("integerConstant", v.to_string()),
+            &Token::IntegerConstant(ref v) => ("integerConstant", format!("{}", v)),
         };
         write!(f, "<{0}>{1}</{0}>", label, value)
     }
@@ -38,6 +219,8 @@ impl fmt::Display for Token {
 
 #[derive(Debug, PartialEq)]
 pub enum TokenError {
+    SymbolError(SymbolError),
+    KeywordError(KeywordError),
     InvalidTokenError(String),
     InvalidIdentifierError(String),
     IntTooBigError(u16),
@@ -49,6 +232,18 @@ pub enum TokenError {
 impl From<regex::Error> for TokenError {
     fn from(error: regex::Error) -> Self {
         TokenError::RegexError(error)
+    }
+}
+
+impl From<KeywordError> for TokenError {
+    fn from(error: KeywordError) -> Self {
+        TokenError::KeywordError(error)
+    }
+}
+
+impl From<SymbolError> for TokenError {
+    fn from(error: SymbolError) -> Self {
+        TokenError::SymbolError(error)
     }
 }
 
@@ -92,9 +287,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
 
     let tokenized = tokenize_regex.captures_iter(&strip_comments(input)?).map(|capture| {
         if let Some(mat) = capture.name("keyword") {
-            Ok(Token::Keyword(mat.as_str().to_string()))
+            Ok(Token::Keyword(mat.as_str().to_string().try_into()?))
         } else if let Some(mat) = capture.name("symbol") {
-            Ok(Token::Symbol(mat.as_str().to_string()))
+            Ok(Token::Symbol(mat.as_str().to_string().try_into()?))
         } else if let Some(mat) = capture.name("string") {
             Ok(Token::StringConstant(mat.as_str().to_string()))
         } else if let Some(mat) = capture.name("identifier") {
@@ -104,8 +299,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
             let parsed = mat.as_str().parse::<u16>()?;
             // it actually has to fit into 15 bits per our specification
             if parsed < 0b111111111111111 {
-                // it's fine, cajole back to a string
-                Ok(Token::IntegerConstant(format!("{}", parsed)))
+                Ok(Token::IntegerConstant(parsed))
             } else {
                 Err(TokenError::IntTooBigError(parsed))
             }
