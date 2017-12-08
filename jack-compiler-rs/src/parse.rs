@@ -907,7 +907,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                 let body_end = body_start + balance_symbol(&tokens[body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
                 statements.push(Statement::While(
                     parse_while_statement(
-                        &tokens[condition_start..condition_end],
+                        &tokens[condition_start + 1..condition_end],
                         &tokens[body_start + 1..body_end]
                     )?
                 ));
