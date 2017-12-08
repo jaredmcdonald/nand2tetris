@@ -655,7 +655,7 @@ fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Resul
             &&Token::Symbol(Symbol::CloseParen) => balance -= 1,
             _ => (),
         }
-        balance == 0
+        balance != 0
     }).map(|t| t.clone()).collect::<Vec<Token>>();
 
     let parameters = parse_expression_list(&params_tokens[1..])?; // drop opening paren
@@ -669,10 +669,11 @@ fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Resul
 
 fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, ParseError> {
     let mut peekable = tokens.iter().peekable();
-    let next = peekable.next().ok_or(ParseError {
-        message: "invalid expression: no tokens".to_string(),
-    })?;
-    let term = match next {
+    let next = peekable.next();
+    if next == None {
+        return Ok(vec![]);
+    }
+    let term = match next.unwrap() {
         &Token::IntegerConstant(ref i) => Term::IntegerConstant(*i),
         &Token::StringConstant(ref s) => Term::StringConstant(s.to_string()),
         &Token::Keyword(ref k) => {
@@ -700,7 +701,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                         &&Token::Symbol(Symbol::CloseSquare) => balance -= 1,
                         _ => (),
                     }
-                    balance == 0
+                    balance != 0
                 }).map(|t| t.clone()).collect::<Vec<Token>>();
 
                 Term::IndexExpr(id.to_string(), parse_expression(&index_expr_tokens[1..])?)
@@ -721,7 +722,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                         &&Token::Symbol(Symbol::CloseParen) => paren_balance -= 1,
                         _ => (),
                     }
-                    paren_balance == 0
+                    paren_balance != 0
                 }).map(|t| t.clone()).collect::<Vec<Token>>();
 
                 // put everything back into one list (parens included) for `parse_subroutine_call` :/
@@ -769,7 +770,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                         &&Token::Symbol(Symbol::CloseParen) => balance -= 1,
                         _ => (),
                     }
-                    balance == 0
+                    balance != 0
                 }).map(|t| t.clone()).collect::<Vec<Token>>();
                 Term::Parenthetical(parse_expression(&parenthetical_tokens)?)
             } else {
@@ -881,9 +882,10 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                 let condition_end = condition_start + balance_symbol(&tokens[condition_start..], Symbol::OpenParen, Symbol::CloseParen)?;
                 let if_body_start = condition_end + 1;
                 let if_body_end = if_body_start + balance_symbol(&tokens[if_body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
-                let (maybe_else_body, end_index) = if
                 // check to see if there are any more tokens, and if the next one is `else`
-                if_body_end + 1 < tokens.len() && &tokens[if_body_end + 1] == &Token::Keyword(Keyword::Else) {
+                let (maybe_else_body, end_index) = if if_body_end + 1 < tokens.len() &&
+                        &tokens[if_body_end + 1] == &Token::Keyword(Keyword::Else) {
+
                     let else_body_start = if_body_end + 2; // hop over `else` token to open bracket
                     let else_body_end = else_body_start + balance_symbol(&tokens[else_body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
                     (Some(&tokens[else_body_start + 1..else_body_end]), else_body_end)
@@ -892,7 +894,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                 };
                 statements.push(Statement::If(
                     parse_if_statement(
-                        &tokens[condition_start..condition_end],
+                        &tokens[condition_start + 1..condition_end],
                         &tokens[if_body_start + 1..if_body_end],
                         maybe_else_body
                     )?
@@ -1382,7 +1384,9 @@ mod test {
             // } // end if
             Token::Symbol(Symbol::CloseCurly),
         ];
-        assert!(parse_subroutine_body(&input).is_ok());
+        let output = parse_subroutine_body(&input);
+        println!("{:?}", output);
+        assert!(output.is_ok());
     }
 
     #[test]
