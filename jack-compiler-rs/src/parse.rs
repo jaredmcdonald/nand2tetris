@@ -633,8 +633,8 @@ fn parse_expression_list(tokens: &[Token]) -> Result<Vec<Expression>, ParseError
 
 fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Result<SubroutineCall, ParseError> {
     let mut peekable = rest_tokens.iter().peekable();
-    let next = peekable.peek();
-    let (parent_name, subroutine_name) = if next == Some(&&Token::Symbol(Symbol::Period)) {
+    let is_method_call = peekable.peek() == Some(&&Token::Symbol(Symbol::Period));
+    let (parent_name, subroutine_name) = if is_method_call {
         (
             // in this case we're dealing with a method call, so `first_identifier` is the parent name
             Some(first_identifier.to_string()),
@@ -669,10 +669,13 @@ fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Resul
 
 fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, ParseError> {
     let mut peekable = tokens.iter().peekable();
-    let term = match peekable.next() {
-        Some(&Token::IntegerConstant(ref i)) => Term::IntegerConstant(*i),
-        Some(&Token::StringConstant(ref s)) => Term::StringConstant(s.to_string()),
-        Some(&Token::Keyword(ref k)) => {
+    let next = peekable.next().ok_or(ParseError {
+        message: "invalid expression: no tokens".to_string(),
+    })?;
+    let term = match next {
+        &Token::IntegerConstant(ref i) => Term::IntegerConstant(*i),
+        &Token::StringConstant(ref s) => Term::StringConstant(s.to_string()),
+        &Token::Keyword(ref k) => {
             if k == &Keyword::True || k == &Keyword::False || k == &Keyword::Null || k == &Keyword::This {
                 Term::KeywordConstant(*k)
             } else {
@@ -681,8 +684,13 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 });
             }
         },
-        Some(&Token::Identifier(ref id)) => {
-            let next = peekable.by_ref().peek();
+        &Token::Identifier(ref id) => {
+            // how to avoid this? the problem was that i need to match on the value of
+            // peekable.peek and consume some more tokens within the match arms, but that's
+            // borrowing as mutable twice at once per the compiler
+            let mut peekable_clone = peekable.clone();
+            let next = peekable_clone.peek();
+
             if next == Some(&&Token::Symbol(Symbol::OpenSquare)) {
                 // parse index expr
                 let mut balance = 0; // already consumed the open paren
@@ -727,7 +735,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 Term::VarName(id.to_string())
             }
         },
-        Some(&Token::Symbol(ref s)) => {
+        &Token::Symbol(ref s) => {
             if s == &Symbol::Minus || s == &Symbol::Not {
                 // unary op then term
                 let op = match s {
@@ -770,9 +778,6 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 });
             }
         }
-        _ => return Err(ParseError {
-            message: "unexpected token in expression".to_string(),
-        })
     };
 
     let mut expressions = vec![ExpressionItem::Term(term)];
