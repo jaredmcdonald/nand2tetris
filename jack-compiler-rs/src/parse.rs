@@ -49,11 +49,20 @@ pub struct Expression {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum UnaryOp {
+    Neg,
+    Not,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ExpressionTerm {
     IntegerConstant(u16),
     StringConstant(String),
     KeywordConstant(Keyword),
-    VarName(String)
+    VarName(String),
+    Unary(UnaryOp, Box<ExpressionTerm>), // can i do this?
+    Parenthetical(Expression),
+    IndexExpr(String, Expression),
 }
 
 impl fmt::Display for Expression {
@@ -491,47 +500,100 @@ fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
     Ok(Var { names, data_type })
 }
 
-// TODO
-fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
+fn parse_term(tokens: &[Token]) -> Result<(ExpressionTerm, Vec<Token>), ParseError> {
     let mut peekable = tokens.iter().peekable();
-    let term = match peekable.next() {
-        Some(&&Token::IntegerConstant(i)) => vec![ExpressionTerm::IntegerConstant(i)],
-        Some(&&Token::StringConstant(s)) => vec![ExpressionTerm::StringConstant(s)],
-        Some(&&Token::Keyword(k)) => {
+    match peekable.next() {
+        Some(&Token::IntegerConstant(i)) => Ok((
+            ExpressionTerm::IntegerConstant(i),
+            peekable.map(|t| t.clone()).collect::<Vec<Token>>()
+        )),
+        Some(&Token::StringConstant(s)) => Ok((
+            ExpressionTerm::StringConstant(s),
+            peekable.map(|t| t.clone()).collect::<Vec<Token>>()
+        )),
+        Some(&Token::Keyword(k)) => {
             if k == Keyword::True || k == Keyword::False || k == Keyword::Null || k == Keyword::This {
-                vec![ExpressionTerm::KeywordConstant(k)]
+                Ok((
+                    ExpressionTerm::KeywordConstant(k),
+                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
+                ))
             } else {
                 return Err(ParseError {
                     message: format!("unexpected keyword `{:?}` in expression", k)
-                }),
+                });
             }
         },
-        Some(&&Token::Identifier(id)) => {
+        Some(&Token::Identifier(id)) => {
             let next = peekable.by_ref().peek();
-            if next == None {
-                // lone var name
-                vec![ExpressionTerm::VarName(id)]
-            } else if next == Some(&&Token::Symbol(Symbol::OpenSquare)) {
+            if next == Some(&&Token::Symbol(Symbol::OpenSquare)) {
                 // parse index expr
+                let balance = 0; // already consumed the open paren
+                let index_expr_tokens = peekable.by_ref().take_while(|t| {
+                    match t {
+                        &&Token::Symbol(Symbol::OpenSquare) => balance += 1,
+                        &&Token::Symbol(Symbol::CloseSquare) => balance -= 1,
+                        _ => (),
+                    }
+                    balance == 0
+                }).map(|t| t.clone()).collect::<Vec<Token>>();
+                Ok((
+                    ExpressionTerm::IndexExpr(id, parse_expression(&index_expr_tokens[1..])?),
+                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
+                ))
             } else if next == Some(&&Token::Symbol(Symbol::OpenParen)) ||
                       next == Some(&&Token::Symbol(Symbol::Period)) {
                 // parse subroutine call
             } else {
-                // next is probably an op
+                Ok(( // next is probably an op, or maybe this is just a lone var name
+                    ExpressionTerm::VarName(id),
+                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
+                ))
             }
         },
-        Some(&&Token::Symbol(s)) => {
-            if s == &&Symbol::Minus || s == &&Symbol::Not {
+        Some(&Token::Symbol(s)) => {
+            if s == Symbol::Minus || s == Symbol::Not {
                 // unary op then term
-            } else if s == &&Symbol::OpenParen {
+                let op = match s {
+                    Symbol::Minus => UnaryOp::Neg,
+                    Symbol::Not => UnaryOp::Not,
+                    _ => panic!("arrrrgh"), // we already checked above! wat
+                };
+                let (next_term, rest) = parse_term(
+                    &peekable.map(|t| t.clone()).collect::<Vec<Token>>()
+                )?;
+                Ok((
+                    ExpressionTerm::Unary(op, Box::new(next_term)),
+                    rest
+                ))
+            } else if s == Symbol::OpenParen {
                 // parenthetical expression
+                let balance = 1; // already consumed the open paren
+                let parenthetical_tokens = peekable.by_ref().take_while(|t| {
+                    match t {
+                        &&Token::Symbol(Symbol::OpenParen) => balance += 1,
+                        &&Token::Symbol(Symbol::CloseParen) => balance -= 1,
+                        _ => (),
+                    }
+                    balance == 0
+                }).map(|t| t.clone()).collect::<Vec<Token>>();
+                Ok((
+                    ExpressionTerm::Parenthetical(parse_expression(&parenthetical_tokens)?),
+                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
+                ))
             } else {
                 return Err(ParseError {
                     message: format!("expected term, got symbol `{:?}` in expression", s)
-                }),
+                });
             }
         }
     }
+}
+
+// TODO
+fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
+    let mut tokens_iter = tokens.iter();
+    let (term, rest) = parse_term(&mut tokens_iter)?;
+
     Ok(Expression { content: tokens.to_vec() })
 }
 
