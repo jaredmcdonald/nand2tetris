@@ -821,15 +821,19 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
                 &&Token::Symbol(Symbol::CloseSquare) => balance -= 1,
                 _ => (),
             }
-            balance == 0
+            balance != 0
             // todo: is there a way to make this 👇 simpler?
         }).map(|t| t.clone()).collect::<Vec<Token>>();
-
-        Some(parse_expression(&index_expr_tokens)?)
+        Some(parse_expression(&index_expr_tokens[1..])?) // omit open square bracket
     } else {
         None
     };
 
+    // skip over the equals sign
+    if peekable.next() != Some(&Token::Symbol(Symbol::Eq)) {
+        return Err(ParseError { message: "missing equals sign in let statement".to_string() });
+    }
+    
     let expression = parse_expression(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?;
     Ok(LetStatement { name, expression, index_expression })
 }
@@ -1004,9 +1008,7 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
                 .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
                 .map(|t| t.clone()).collect::<Vec<Token>>();
             let mut result = vec![
-                ClassBodyItem::ClassVar(
-                    parse_class_var(&class_var_tokens[..class_var_tokens.len() - 2])? // omit semicolon
-                )
+                ClassBodyItem::ClassVar(parse_class_var(&class_var_tokens)?)
             ];
             result.extend(
                 parse_class_body(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?
