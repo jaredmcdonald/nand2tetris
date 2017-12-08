@@ -814,8 +814,8 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
     })?)?;
 
     let index_expression = if let Some(&&Token::Symbol(Symbol::OpenSquare)) = peekable.peek() {
-        let mut balance = 0;
-        let index_expr_tokens = peekable.by_ref().take_while(|t| {
+        let mut balance = 1; // hop over the open square bracket we already peeked
+        let index_expr_tokens = peekable.by_ref().skip(1).take_while(|t| {
             match t {
                 &&Token::Symbol(Symbol::OpenSquare) => balance += 1,
                 &&Token::Symbol(Symbol::CloseSquare) => balance -= 1,
@@ -824,7 +824,7 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
             balance != 0
             // todo: is there a way to make this 👇 simpler?
         }).map(|t| t.clone()).collect::<Vec<Token>>();
-        Some(parse_expression(&index_expr_tokens[1..])?) // omit open square bracket
+        Some(parse_expression(&index_expr_tokens)?) // omit open square bracket
     } else {
         None
     };
@@ -833,7 +833,7 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
     if peekable.next() != Some(&Token::Symbol(Symbol::Eq)) {
         return Err(ParseError { message: "missing equals sign in let statement".to_string() });
     }
-    
+
     let expression = parse_expression(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?;
     Ok(LetStatement { name, expression, index_expression })
 }
