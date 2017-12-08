@@ -1,4 +1,5 @@
 use std::fmt;
+use std::convert::TryInto;
 use tokenize::{Token, Symbol, Keyword};
 
 #[derive(Debug, PartialEq)]
@@ -6,7 +7,7 @@ pub enum Statement {
     Let(LetStatement),
     If(IfStatement),
     While(WhileStatement),
-    Do(Vec<Token>), // TODO should just be a subroutine call
+    Do(SubroutineCall), // TODO should just be a subroutine call
     Return(Expression),
 }
 
@@ -17,20 +18,17 @@ impl fmt::Display for Statement {
             Statement::If(ref s) => write!(f, "<ifStatement>\n{}\n</ifStatement>", s),
             Statement::While(ref s) => write!(f, "<whileStatement>\n{}\n</whileStatement>", s),
             Statement::Do(ref s) => {
-                let do_content = s.iter().map(|token| format!("{}", token))
-                    .collect::<Vec<String>>()
-                    .join("\n");
                 write!(f,
                     "<doStatement>
                         <keyword>do</keyword>
                         {}
                         <symbol>;</symbol>
                     </doStatement>",
-                    do_content
+                    s
                 )
             },
             Statement::Return(ref s) => {
-                let maybe_expr = if s.content.len() > 0 { format!("\n{}", s) } else { "".to_string() };
+                let maybe_expr = if s.0.len() > 0 { format!("\n{}", s) } else { "".to_string() };
                 write!(f,
                     "<returnStatement>
                         <keyword>return</keyword>{}
@@ -44,31 +42,146 @@ impl fmt::Display for Statement {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Expression {
-    content: Vec<Token>, // TODO
-}
-
-#[derive(Debug, PartialEq)]
 pub enum UnaryOp {
     Neg,
     Not,
 }
 
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            &UnaryOp::Neg => Symbol::Minus,
+            &UnaryOp::Not => Symbol::Not,
+        })
+    }
+}
+
 #[derive(Debug, PartialEq)]
-pub enum ExpressionTerm {
+pub enum BinaryOp {
+    Plus,
+    Minus,
+    Mult,
+    Div,
+    And,
+    Or,
+    Lt,
+    Gt,
+    Eq,
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
+            &BinaryOp::Plus => Symbol::Plus,
+            &BinaryOp::Minus => Symbol::Minus,
+            &BinaryOp::Mult => Symbol::Mult,
+            &BinaryOp::Div => Symbol::Div,
+            &BinaryOp::And => Symbol::Amp,
+            &BinaryOp::Or => Symbol::Pipe,
+            &BinaryOp::Lt => Symbol::Lt,
+            &BinaryOp::Gt => Symbol::Gt,
+            &BinaryOp::Eq => Symbol::Eq,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SubroutineCall {
+    parent_name: Option<String>,
+    subroutine_name: String,
+    parameters: Vec<Expression>,
+}
+
+impl fmt::Display for SubroutineCall {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let parent_prefix = if let Some(p) = self.parent_name {
+            format!("<identifier>{}</identifier>\n<symbol>.</symbol>\n", p)
+        } else { "".to_string() };
+        let param_list = self.parameters.iter()
+            .map(|expr| format!("{}\n", expr))
+            .collect::<Vec<String>>().join("<symbol>,</symbol>\n");
+        write!(f, "{}<identifier>{}</identifier>
+        <symbol>(</symbol>
+        <expressionList>{}
+        </expressionList>
+        <symbol>)</symbol>
+        ", parent_prefix, self.subroutine_name, param_list)
+    }
+}
+
+impl TryInto<BinaryOp> for Symbol {
+    type Error = ParseError;
+
+    fn try_into(self) -> Result<BinaryOp, Self::Error> {
+        match self {
+            Symbol::Plus => Ok(BinaryOp::Plus),
+            Symbol::Minus => Ok(BinaryOp::Minus),
+            Symbol::Mult => Ok(BinaryOp::Mult),
+            Symbol::Div => Ok(BinaryOp::Div),
+            Symbol::Amp => Ok(BinaryOp::And),
+            Symbol::Pipe => Ok(BinaryOp::Or),
+            Symbol::Lt => Ok(BinaryOp::Lt),
+            Symbol::Gt => Ok(BinaryOp::Gt),
+            Symbol::Eq => Ok(BinaryOp::Eq),
+            _ => Err(Self::Error { message: format!("unrecognized operation `{}`", self) }),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ExpressionItem {
+    Term(Term),
+    Operation(BinaryOp),
+}
+
+impl fmt::Display for ExpressionItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &ExpressionItem::Term(ref t) => write!(f, "<term>\n{}\n</term>", t),
+            &ExpressionItem::Operation(ref o) => write!(f, "<op>\n{}\n</op>", o),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Term {
     IntegerConstant(u16),
     StringConstant(String),
     KeywordConstant(Keyword),
     VarName(String),
-    Unary(UnaryOp, Box<ExpressionTerm>), // can i do this?
+    Unary(UnaryOp, Box<Term>), // can i do this?
     Parenthetical(Expression),
     IndexExpr(String, Expression),
+    SubroutineCall(SubroutineCall),
 }
+
+impl fmt::Display for Term {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<term>\n{}\n</term>", match self {
+            &Term::IntegerConstant(ref i) => format!("<integerConstant>{}</integerConstant>", i),
+            &Term::StringConstant(ref s) => format!("<stringConstant>{}</stringConstant>", s),
+            &Term::KeywordConstant(ref k) => format!("{}", k),
+            &Term::VarName(ref v) => format!("<identifier>{}</identifier>", v),
+            &Term::Unary(ref op, ref term) => format!("{}\n{}", op, term),
+            &Term::Parenthetical(ref e) => format!("<symbol>(</symbol>\n{}\n<symbol>)</symbol>", e),
+            &Term::IndexExpr(ref var_name, ref expr) => format!(
+                    "<identifier>{}</identifier>
+                    <symbol>[</symbol>
+                    {}
+                    <symbol>]</symbol>",
+                var_name, expr),
+            &Term::SubroutineCall(ref s) => format!("{}", s),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Expression(Vec<ExpressionItem>);
 
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let content = self.content.iter().map(|t| format!("{}", t)).collect::<String>();
-        write!(f, "<expression>\n<term>\n{}\n</term>\n</expression>", content)
+        let content = self.0.iter().map(|t| format!("{}", t)).collect::<String>();
+        write!(f, "<expression>\n{}\n</expression>", content)
     }
 }
 
@@ -500,30 +613,74 @@ fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
     Ok(Var { names, data_type })
 }
 
-fn parse_term(tokens: &[Token]) -> Result<(ExpressionTerm, Vec<Token>), ParseError> {
+fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
+    Ok(Expression(parse_expression_inner(tokens)?))
+}
+
+fn parse_expression_list(tokens: &[Token]) -> Result<Vec<Expression>, ParseError> {
+    let mut tokens_iter = tokens.iter();
+    let mut expression_tokens = vec![vec![]];
+    while let Some(token) = tokens_iter.next() {
+        if token == &Token::Symbol(Symbol::Comma) {
+            expression_tokens.push(vec![])
+        } else {
+            expression_tokens[expression_tokens.len() - 2].push(token.clone());
+        }
+    }
+    Ok(expression_tokens.iter().map(|ts| parse_expression(ts)).collect::<Result<Vec<Expression>, ParseError>>()?)
+}
+
+fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Result<SubroutineCall, ParseError> {
+    let mut peekable = rest_tokens.iter().peekable();
+    let next = peekable.peek();
+    let (parent_name, subroutine_name) = if next == Some(&&Token::Symbol(Symbol::Period)) {
+        (
+            // in this case we're dealing with a method call, so `first_identifier` is the parent name
+            Some(first_identifier.to_string()),
+            // skip the period and extract the identifier, which is the method name
+            parse_identifier(peekable.by_ref().skip(1).next().ok_or(ParseError {
+                message: "malformed subroutine call".to_string(),
+            })?)?
+        )
+    } else {
+        // otherwise there is no parent and `first_identifier` is a lone function name
+        (None, first_identifier.to_string())
+    };
+
+    let mut balance = 0;
+    let params_tokens = peekable.by_ref().take_while(|t| {
+        match t {
+            &&Token::Symbol(Symbol::OpenParen) => balance += 1,
+            &&Token::Symbol(Symbol::CloseParen) => balance -= 1,
+            _ => (),
+        }
+        balance == 0
+    }).map(|t| t.clone()).collect::<Vec<Token>>();
+
+    let parameters = parse_expression_list(&params_tokens[1..])?; // drop opening paren
+
+    Ok(SubroutineCall {
+        parent_name,
+        subroutine_name,
+        parameters,
+    })
+}
+
+fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, ParseError> {
     let mut peekable = tokens.iter().peekable();
-    match peekable.next() {
-        Some(&Token::IntegerConstant(i)) => Ok((
-            ExpressionTerm::IntegerConstant(i),
-            peekable.map(|t| t.clone()).collect::<Vec<Token>>()
-        )),
-        Some(&Token::StringConstant(s)) => Ok((
-            ExpressionTerm::StringConstant(s),
-            peekable.map(|t| t.clone()).collect::<Vec<Token>>()
-        )),
-        Some(&Token::Keyword(k)) => {
-            if k == Keyword::True || k == Keyword::False || k == Keyword::Null || k == Keyword::This {
-                Ok((
-                    ExpressionTerm::KeywordConstant(k),
-                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
-                ))
+    let term = match peekable.next() {
+        Some(&Token::IntegerConstant(ref i)) => Term::IntegerConstant(*i),
+        Some(&Token::StringConstant(ref s)) => Term::StringConstant(s.to_string()),
+        Some(&Token::Keyword(ref k)) => {
+            if k == &Keyword::True || k == &Keyword::False || k == &Keyword::Null || k == &Keyword::This {
+                Term::KeywordConstant(*k)
             } else {
                 return Err(ParseError {
                     message: format!("unexpected keyword `{:?}` in expression", k)
                 });
             }
         },
-        Some(&Token::Identifier(id)) => {
+        Some(&Token::Identifier(ref id)) => {
             let next = peekable.by_ref().peek();
             if next == Some(&&Token::Symbol(Symbol::OpenSquare)) {
                 // parse index expr
@@ -536,38 +693,67 @@ fn parse_term(tokens: &[Token]) -> Result<(ExpressionTerm, Vec<Token>), ParseErr
                     }
                     balance == 0
                 }).map(|t| t.clone()).collect::<Vec<Token>>();
-                Ok((
-                    ExpressionTerm::IndexExpr(id, parse_expression(&index_expr_tokens[1..])?),
-                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
-                ))
+
+                Term::IndexExpr(id.to_string(), parse_expression(&index_expr_tokens[1..])?)
+
             } else if next == Some(&&Token::Symbol(Symbol::OpenParen)) ||
                       next == Some(&&Token::Symbol(Symbol::Period)) {
-                // parse subroutine call
+
+                // grab everything before the params
+                let mut call_tokens = peekable.by_ref()
+                    .take_while(|t| t != &&Token::Symbol(Symbol::OpenParen))
+                    .map(|t| t.clone()).collect::<Vec<Token>>();
+
+                // grab the params
+                let mut paren_balance = 1; // already ate the open paren
+                let params_tokens = peekable.by_ref().take_while(|t| {
+                    match t {
+                        &&Token::Symbol(Symbol::OpenParen) => paren_balance += 1,
+                        &&Token::Symbol(Symbol::CloseParen) => paren_balance -= 1,
+                        _ => (),
+                    }
+                    paren_balance == 0
+                }).map(|t| t.clone()).collect::<Vec<Token>>();
+
+                // put everything back into one list (parens included) for `parse_subroutine_call` :/
+                call_tokens.push(Token::Symbol(Symbol::OpenParen));
+                call_tokens.extend(params_tokens);
+                call_tokens.push(Token::Symbol(Symbol::CloseParen));
+
+                Term::SubroutineCall(parse_subroutine_call(id, &call_tokens)?)
             } else {
-                Ok(( // next is probably an op, or maybe this is just a lone var name
-                    ExpressionTerm::VarName(id),
-                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
-                ))
+                // next is probably an op, or maybe this is just a lone var name
+                Term::VarName(id.to_string())
             }
         },
-        Some(&Token::Symbol(s)) => {
-            if s == Symbol::Minus || s == Symbol::Not {
+        Some(&Token::Symbol(ref s)) => {
+            if s == &Symbol::Minus || s == &Symbol::Not {
                 // unary op then term
                 let op = match s {
-                    Symbol::Minus => UnaryOp::Neg,
-                    Symbol::Not => UnaryOp::Not,
+                    &Symbol::Minus => UnaryOp::Neg,
+                    &Symbol::Not => UnaryOp::Not,
                     _ => panic!("arrrrgh"), // we already checked above! wat
                 };
-                let (next_term, rest) = parse_term(
+                let rest = parse_expression_inner(
                     &peekable.map(|t| t.clone()).collect::<Vec<Token>>()
                 )?;
-                Ok((
-                    ExpressionTerm::Unary(op, Box::new(next_term)),
-                    rest
-                ))
-            } else if s == Symbol::OpenParen {
+                let next_term = if let ExpressionItem::Term(t) = rest[0] {
+                    t
+                } else {
+                    return Err(ParseError {
+                        message: "expected term after unary op".to_string(),
+                    });
+                };
+
+                let mut result = vec![
+                    ExpressionItem::Term(Term::Unary(op, Box::new(next_term)))
+                ];
+                // result.extend(&rest[1..]);
+
+                return Ok(result);
+            } else if s == &Symbol::OpenParen {
                 // parenthetical expression
-                let balance = 1; // already consumed the open paren
+                let mut balance = 1; // already consumed the open paren
                 let parenthetical_tokens = peekable.by_ref().take_while(|t| {
                     match t {
                         &&Token::Symbol(Symbol::OpenParen) => balance += 1,
@@ -576,25 +762,43 @@ fn parse_term(tokens: &[Token]) -> Result<(ExpressionTerm, Vec<Token>), ParseErr
                     }
                     balance == 0
                 }).map(|t| t.clone()).collect::<Vec<Token>>();
-                Ok((
-                    ExpressionTerm::Parenthetical(parse_expression(&parenthetical_tokens)?),
-                    peekable.map(|t| t.clone()).collect::<Vec<Token>>()
-                ))
+                Term::Parenthetical(parse_expression(&parenthetical_tokens)?)
             } else {
                 return Err(ParseError {
                     message: format!("expected term, got symbol `{:?}` in expression", s)
                 });
             }
         }
+        _ => return Err(ParseError {
+            message: "unexpected token in expression".to_string(),
+        })
+    };
+
+    let mut expressions = vec![ExpressionItem::Term(term)];
+    let op = peekable.next();
+
+    if op == None {
+        return Ok(expressions); // base case
+    } else {
+        if let &Token::Symbol(sym) = op.unwrap() {
+            let operation: BinaryOp = sym.try_into()?;
+            expressions.push(ExpressionItem::Operation(operation));
+        } else {
+            return Err(ParseError {
+                message: "expected an operation".to_string(),
+            });
+        }
     }
-}
-
-// TODO
-fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
-    let mut tokens_iter = tokens.iter();
-    let (term, rest) = parse_term(&mut tokens_iter)?;
-
-    Ok(Expression { content: tokens.to_vec() })
+    if peekable.peek() == None {
+        Err(ParseError {
+            message: "trailing operation in expression, expected a term".to_string(),
+        })
+    } else {
+        expressions.extend(
+            parse_expression_inner(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?
+        );
+        Ok(expressions)
+    }
 }
 
 fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
@@ -701,9 +905,10 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
             },
             &Token::Keyword(Keyword::Do) => {
                 let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(Symbol::Semi))?;
+                let first_identifier = parse_identifier(&tokens[parse_index + 1])?;
                 statements.push(Statement::Do(
                     // TODO this should be a subroutine call
-                    tokens[parse_index + 1..end_index].to_vec()
+                    parse_subroutine_call(&first_identifier, &tokens[parse_index + 2..end_index])?
                 ));
                 parse_index = end_index + 1;
             },
