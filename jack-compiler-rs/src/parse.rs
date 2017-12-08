@@ -618,13 +618,16 @@ fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
 }
 
 fn parse_expression_list(tokens: &[Token]) -> Result<Vec<Expression>, ParseError> {
+    if tokens.len() == 0 {
+        return Ok(vec![]);
+    }
     let mut tokens_iter = tokens.iter();
     let mut expression_tokens = vec![vec![]];
     while let Some(token) = tokens_iter.next() {
         if token == &Token::Symbol(Symbol::Comma) {
             expression_tokens.push(vec![])
         } else {
-            let index = expression_tokens.len() - 2;
+            let index = expression_tokens.len() - 1;
             expression_tokens[index].push(token.clone());
         }
     }
@@ -1102,7 +1105,7 @@ mod test {
     #[test]
     fn test_find_token_index() {
         assert_eq!(find_token_index(
-            vec![
+            &[
                 Token::Keyword(Keyword::Static),
                 Token::Keyword(Keyword::Int),
                 Token::Identifier("a".to_string()),
@@ -1110,7 +1113,7 @@ mod test {
                 Token::Identifier("b".to_string()),
                 Token::Symbol(Symbol::Semi),
                 Token::Keyword(Keyword::Constructor),
-            ].as_slice(),
+            ],
             Token::Symbol(Symbol::Semi),
         ).unwrap(), 5);
     }
@@ -1118,7 +1121,7 @@ mod test {
     #[test]
     fn test_balance_symbol_simple() {
         assert_eq!(balance_symbol(
-            vec![
+            &[
                 Token::Symbol(Symbol::OpenCurly),
                 Token::Keyword(Keyword::Do),
                 Token::Identifier("blargh".to_string()),
@@ -1126,7 +1129,7 @@ mod test {
                 Token::Symbol(Symbol::CloseParen),
                 Token::Symbol(Symbol::Semi),
                 Token::Symbol(Symbol::CloseCurly),
-            ].as_slice(),
+            ],
             Symbol::OpenCurly,
             Symbol::CloseCurly
         ).unwrap(), 6);
@@ -1135,7 +1138,7 @@ mod test {
     #[test]
     fn test_balance_symbol_complex() {
         assert_eq!(balance_symbol(
-            vec![
+            &[
                 Token::Symbol(Symbol::OpenCurly),
                 Token::Symbol(Symbol::OpenCurly),
                 Token::Keyword(Keyword::Return),
@@ -1143,7 +1146,7 @@ mod test {
                 Token::Symbol(Symbol::Semi),
                 Token::Symbol(Symbol::CloseCurly),
                 Token::Symbol(Symbol::CloseCurly),
-            ].as_slice(),
+            ],
             Symbol::OpenCurly,
             Symbol::CloseCurly
         ).unwrap(), 6);
@@ -1151,7 +1154,7 @@ mod test {
 
     #[test]
     fn test_parse_outer() {
-        let input = vec![
+        let input = [
             // class Foo {
             Token::Keyword(Keyword::Class),
             Token::Identifier("Foo".to_string()),
@@ -1205,7 +1208,7 @@ mod test {
 
     #[test]
     fn test_parse_outer_errors() {
-        let bad_input = vec![
+        let bad_input = [
             Token::Keyword(Keyword::Class),
             Token::Symbol(Symbol::OpenCurly),
             Token::Symbol(Symbol::CloseCurly),
@@ -1215,7 +1218,7 @@ mod test {
             _ => panic!("should have been an error"),
         }
 
-        let more_bad_input = vec![
+        let more_bad_input = [
             Token::Keyword(Keyword::Var),
             Token::Keyword(Keyword::Int),
             Token::Identifier("foo".to_string()),
@@ -1229,7 +1232,7 @@ mod test {
 
     #[test]
     fn test_parse_class_var() {
-        let input = vec![
+        let input = [
             Token::Keyword(Keyword::Static),
             Token::Keyword(Keyword::Int),
             Token::Identifier("foo".to_string()),
@@ -1242,7 +1245,7 @@ mod test {
             },
         });
 
-        let multiple_declarations = vec![
+        let multiple_declarations = [
             Token::Keyword(Keyword::Field),
             Token::Identifier("MyCustomClass".to_string()),
             Token::Identifier("foo".to_string()),
@@ -1274,7 +1277,7 @@ mod test {
         two_let_statements.extend(let_statement.clone());
         assert!(parse_statements(&two_let_statements).is_ok());
 
-        let complex_let = vec![
+        let complex_let = [
             Token::Keyword(Keyword::Let),
             Token::Identifier("x".to_string()),
             Token::Symbol(Symbol::OpenSquare),
@@ -1289,7 +1292,7 @@ mod test {
 
     #[test]
     fn test_parse_while_statements() {
-        let while_statement = vec![
+        let while_statement = [
             // while (x) {
             Token::Keyword(Keyword::While),
             Token::Symbol(Symbol::OpenParen),
@@ -1311,9 +1314,9 @@ mod test {
     #[test]
     fn test_parse_params() {
         // empty
-        assert_eq!(parse_params(&vec![]).unwrap(), vec![]);
+        assert_eq!(parse_params(&[]).unwrap(), vec![]);
 
-        let one_param = vec![
+        let one_param = [
             Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
         ];
@@ -1322,7 +1325,7 @@ mod test {
             vec![Param { param_type: Type::Int, name: "x".to_string() }]
         );
 
-        let three_params = vec![
+        let three_params = [
             Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
             Token::Symbol(Symbol::Comma),
@@ -1347,7 +1350,7 @@ mod test {
         let missing_identifier = &three_params[..three_params.len() - 1];
         assert!(parse_params(missing_identifier).is_err());
 
-        let wrong_symbol = vec![
+        let wrong_symbol = [
             Token::Keyword(Keyword::Int),
             Token::Identifier("x".to_string()),
             Token::Symbol(Symbol::Semi),
@@ -1359,7 +1362,7 @@ mod test {
 
     #[test]
     fn test_parse_subroutine_body() {
-        let input = vec![
+        let input = [
             // var int y, x;
             Token::Keyword(Keyword::Var),
             Token::Keyword(Keyword::Int),
@@ -1395,11 +1398,11 @@ mod test {
             &Token::Keyword(Keyword::Function),
             &Token::Keyword(Keyword::Int),
             &Token::Identifier("blargh".to_string()),
-            &vec![
+            &[
                 Token::Keyword(Keyword::Int),
                 Token::Identifier("x".to_string()),
             ],
-            &vec![
+            &[
                 Token::Keyword(Keyword::Var),
                 Token::Keyword(Keyword::Int),
                 Token::Identifier("y".to_string()),
@@ -1417,5 +1420,59 @@ mod test {
             ]
         );
         assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn test_parse_expression() {
+        let parsed = parse_expression(&[
+            // blargh(x[0] + 1) + 2
+            Token::Identifier("blargh".to_string()),
+            Token::Symbol(Symbol::OpenParen),
+            Token::Identifier("x".to_string()),
+            Token::Symbol(Symbol::OpenSquare),
+            Token::IntegerConstant(0),
+            Token::Symbol(Symbol::CloseSquare),
+            Token::Symbol(Symbol::Plus),
+            Token::IntegerConstant(1),
+            Token::Symbol(Symbol::CloseParen),
+            Token::Symbol(Symbol::Plus),
+            Token::IntegerConstant(2),
+        ]);
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn test_parse_expression_list() {
+        let empty = parse_expression_list(&[]);
+        assert_eq!(empty.unwrap(), vec![]);
+
+        let one_param = parse_expression_list(&[
+            Token::IntegerConstant(1),
+            Token::Symbol(Symbol::Plus),
+            Token::IntegerConstant(2)
+        ]);
+
+        assert_eq!(one_param.unwrap(), vec![
+            Expression(vec![
+                ExpressionItem::Term(Term::IntegerConstant(1)),
+                ExpressionItem::Operation(BinaryOp::Plus),
+                ExpressionItem::Term(Term::IntegerConstant(2)),
+            ])
+        ]);
+
+        let two_params = parse_expression_list(&[
+            Token::IntegerConstant(1),
+            Token::Symbol(Symbol::Comma),
+            Token::IntegerConstant(2)
+        ]);
+
+        assert_eq!(two_params.unwrap(), vec![
+            Expression(vec![
+                ExpressionItem::Term(Term::IntegerConstant(1)),
+            ]),
+            Expression(vec![
+                ExpressionItem::Term(Term::IntegerConstant(2)),
+            ])
+        ]);
     }
 }
