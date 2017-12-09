@@ -525,13 +525,17 @@ pub struct ParseError {
     message: String,
 }
 
-fn parse_type(token: &Token) -> Result<Type, ParseError> {
-    match token {
-        &Token::Keyword(Keyword::Int) => Ok(Type::Int),
-        &Token::Keyword(Keyword::Char) => Ok(Type::Char),
-        &Token::Keyword(Keyword::Boolean) => Ok(Type::Boolean),
-        &Token::Identifier(ref id) => Ok(Type::Class(id.to_string())),
-        _ => Err(ParseError { message: format!("expected a type, got token {:?}", token) }),
+impl TryInto<Type> for Token {
+    type Error = ParseError;
+
+    fn try_into(self) -> Result<Type, Self::Error> {
+        match self {
+            Token::Keyword(Keyword::Int) => Ok(Type::Int),
+            Token::Keyword(Keyword::Char) => Ok(Type::Char),
+            Token::Keyword(Keyword::Boolean) => Ok(Type::Boolean),
+            Token::Identifier(ref id) => Ok(Type::Class(id.to_string())),
+            _ => Err(ParseError { message: format!("expected a type, got token {:?}", self) }),
+        }
     }
 }
 
@@ -564,7 +568,7 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
         if first == None {
             break;
         }
-        let param_type = parse_type(first.unwrap())?;
+        let param_type: Type = first.unwrap().clone().try_into()?;
         let name = parse_identifier(peekable.next().ok_or(err())?)?;
         params_list.push(Param { param_type, name });
         let next = peekable.next();
@@ -584,7 +588,7 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
 }
 
 fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
-    let data_type = parse_type(&tokens[0])?;
+    let data_type: Type = tokens[0].clone().try_into()?;
     let mut names = vec![];
     for (index, token) in tokens[1..].iter().enumerate() {
         if index % 2 != 0 {
@@ -990,7 +994,7 @@ fn parse_subroutine(
     let return_type = if return_type_token == &Token::Keyword(Keyword::Void) {
         SubroutineReturnType::Void
     } else {
-        SubroutineReturnType::Type(parse_type(&return_type_token)?)
+        SubroutineReturnType::Type(return_type_token.clone().try_into()?)
     };
 
     let name = parse_identifier(name_token)?;
