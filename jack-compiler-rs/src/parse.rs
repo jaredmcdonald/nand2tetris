@@ -588,18 +588,20 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
 }
 
 fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
-    let data_type: Type = tokens[0].clone().try_into()?;
+    let err = || ParseError { message: format!("malformed var declaration: {:?}", tokens) };
+    let mut peekable = tokens.iter().peekable();
+    let data_type: Type = peekable.next().ok_or(err())?.clone().try_into()?;
     let mut names = vec![];
-    for (index, token) in tokens[1..].iter().enumerate() {
-        if index % 2 != 0 {
-            if token == &Token::Symbol(Symbol::Comma) {
-                continue;
-            } else {
-                return Err(ParseError { message: format!("expected `,`, found {:?}", token) });
-            }
-        } else {
-            names.push(parse_identifier(&token)?);
+    while let Some(name) = peekable.next() {
+        names.push(parse_identifier(name)?);
+        let comma_token = peekable.by_ref().next();
+        if comma_token == None {
+            break;
+        } else if comma_token.unwrap() == &Token::Symbol(Symbol::Comma) &&
+                  peekable.by_ref().peek() != None {
+            continue;
         }
+        return Err(err());
     }
     Ok(Var { names, data_type })
 }
