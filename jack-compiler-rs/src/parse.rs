@@ -46,6 +46,18 @@ pub enum UnaryOp {
     Not,
 }
 
+impl TryInto<UnaryOp> for Symbol {
+    type Error = ParseError;
+
+    fn try_into(self) -> Result<UnaryOp, Self::Error> {
+        match self {
+            Symbol::Minus => Ok(UnaryOp::Neg),
+            Symbol::Not => Ok(UnaryOp::Not),
+            _ => Err(Self::Error { message: format!("unrecognized unary operation `{}`", self) }),
+        }
+    }
+}
+
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", match self {
@@ -281,6 +293,20 @@ pub enum SubroutineType {
     Method,
 }
 
+
+impl TryInto<SubroutineType> for Keyword {
+    type Error = ParseError;
+
+    fn try_into(self) -> Result<SubroutineType, Self::Error> {
+        match self {
+            Keyword::Method => Ok(SubroutineType::Method),
+            Keyword::Function => Ok(SubroutineType::Function),
+            Keyword::Constructor => Ok(SubroutineType::Constructor),
+            _ => Err(Self::Error { message: format!("expected `constructor`, `function` or `method`, got {:?}", self) }),
+        }
+    }
+}
+
 impl fmt::Display for SubroutineType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "<keyword>{}</keyword>", match self {
@@ -365,7 +391,6 @@ impl fmt::Display for Subroutine {
         let param_list_body = self.params.iter().map(|p| format!("{}\n", p))
             .collect::<Vec<String>>()
             .join("<symbol>,</symbol>\n");
-
         write!(f,
             "<subroutineDec>
                 {}
@@ -701,14 +726,10 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 Term::VarName(id.to_string())
             }
         },
-        &Token::Symbol(ref s) => {
-            if s == &Symbol::Minus || s == &Symbol::Not {
+        &Token::Symbol(s) => {
+            if s == Symbol::Minus || s == Symbol::Not {
                 // unary op then term
-                let op = match s {
-                    &Symbol::Minus => UnaryOp::Neg,
-                    &Symbol::Not => UnaryOp::Not,
-                    _ => panic!("arrrrgh"), // we already checked above! wat
-                };
+                let op: UnaryOp = s.try_into()?;
                 let rest = parse_expression_inner(
                     &peekable.map(|t| t.clone()).collect::<Vec<Token>>()
                 )?;
@@ -726,7 +747,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 // result.extend(&rest[1..]);
 
                 return Ok(result);
-            } else if s == &Symbol::OpenParen {
+            } else if s == Symbol::OpenParen {
                 // parenthetical expression
                 let mut balance = 1; // already consumed the open paren
                 let parenthetical_tokens = peekable.by_ref().take_while(|t| {
@@ -747,14 +768,13 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
     };
 
     let mut expressions = vec![ExpressionItem::Term(term)];
-    let op = peekable.next();
+    let op_token = peekable.next();
 
-    if op == None {
+    if op_token == None {
         return Ok(expressions); // base case
     } else {
-        if let &Token::Symbol(sym) = op.unwrap() {
-            let operation: BinaryOp = sym.try_into()?;
-            expressions.push(ExpressionItem::Operation(operation));
+        if let &Token::Symbol(sym) = op_token.unwrap() {
+            expressions.push(ExpressionItem::Operation(sym.try_into()?));
         } else {
             return Err(ParseError {
                 message: "expected an operation".to_string(),
@@ -961,14 +981,10 @@ fn parse_subroutine(
     params_body: &[Token],
     subroutine_body: &[Token],
 ) -> Result<Subroutine, ParseError> {
-    let subroutine_type_err = ParseError {
-        message: format!("expected `constructor`, `function` or `method`, got {:?}", subroutine_type_token),
-    };
-    let subroutine_type = match subroutine_type_token {
-        &Token::Keyword(Keyword::Method) => SubroutineType::Method,
-        &Token::Keyword(Keyword::Function) => SubroutineType::Function,
-        &Token::Keyword(Keyword::Constructor) => SubroutineType::Constructor,
-        _ => return Err(subroutine_type_err),
+    let subroutine_type: SubroutineType = if let &Token::Keyword(kw) = subroutine_type_token {
+        kw.try_into()?
+    } else {
+        return Err(ParseError { message: format!("expected keyword, got `{:?}`", subroutine_type_token) });
     };
 
     let return_type = if return_type_token == &Token::Keyword(Keyword::Void) {
@@ -981,13 +997,7 @@ fn parse_subroutine(
     let params = parse_params(params_body)?;
     let body = parse_subroutine_body(subroutine_body)?;
 
-    Ok(Subroutine {
-        subroutine_type,
-        return_type,
-        params,
-        name,
-        body,
-    })
+    Ok(Subroutine { subroutine_type, return_type, params, name, body })
 }
 
 fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> {
