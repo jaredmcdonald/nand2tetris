@@ -866,78 +866,109 @@ fn parse_while_statement(
 }
 
 fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
-    let mut statements = vec![];
-    let mut parse_index = 0;
-    while parse_index < tokens.len() {
-        let begin_token = &tokens[parse_index];
-        match begin_token {
-            &Token::Keyword(Keyword::Let) => {
-                let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(Symbol::Semi))?;
-                statements.push(
-                    Statement::Let(parse_let_statement(&tokens[parse_index + 1..end_index])?)
-                );
-                parse_index = end_index + 1;
-            },
-            &Token::Keyword(Keyword::If) => {
-                let condition_start = parse_index + 1;
-                let condition_end = condition_start + balance_symbol(&tokens[condition_start..], Symbol::OpenParen, Symbol::CloseParen)?;
-                let if_body_start = condition_end + 1;
-                let if_body_end = if_body_start + balance_symbol(&tokens[if_body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
-                // check to see if there are any more tokens, and if the next one is `else`
-                let (maybe_else_body, end_index) = if if_body_end + 1 < tokens.len() &&
-                        &tokens[if_body_end + 1] == &Token::Keyword(Keyword::Else) {
+    let mut peekable = tokens.iter().peekable();
+    let first_statement = match peekable.next() {
+        Some(&Token::Keyword(Keyword::Let)) => {
+            let let_tokens = peekable.by_ref()
+                .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
+                .map(|t| t.clone()).collect::<Vec<_>>();
+            Statement::Let(parse_let_statement(&let_tokens)?)
+        },
+        Some(&Token::Keyword(Keyword::If)) => {
+            let mut paren_balance = 0;
+            let condition_tokens = peekable.by_ref().take_while(|t| {
+                match t {
+                    &&Token::Symbol(Symbol::OpenParen) => paren_balance += 1,
+                    &&Token::Symbol(Symbol::CloseParen) => paren_balance -= 1,
+                    _ => ()
+                }
+                paren_balance != 0
+            }).map(|t| t.clone()).collect::<Vec<_>>();
 
-                    let else_body_start = if_body_end + 2; // hop over `else` token to open bracket
-                    let else_body_end = else_body_start + balance_symbol(&tokens[else_body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
-                    (Some(&tokens[else_body_start + 1..else_body_end]), else_body_end)
-                } else {
-                    (None, if_body_end)
-                };
-                statements.push(Statement::If(
-                    parse_if_statement(
-                        &tokens[condition_start + 1..condition_end],
-                        &tokens[if_body_start + 1..if_body_end],
-                        maybe_else_body
-                    )?
-                ));
-                parse_index = end_index + 1;
-            },
-            &Token::Keyword(Keyword::While) => {
-                // TODO is there a nice way to dedupe this code from above and elsewhere?
-                let condition_start = parse_index + 1;
-                let condition_end = condition_start + balance_symbol(&tokens[condition_start..], Symbol::OpenParen, Symbol::CloseParen)?;
-                let body_start = condition_end + 1;
-                let body_end = body_start + balance_symbol(&tokens[body_start..], Symbol::OpenCurly, Symbol::CloseCurly)?;
-                statements.push(Statement::While(
-                    parse_while_statement(
-                        &tokens[condition_start + 1..condition_end],
-                        &tokens[body_start + 1..body_end]
-                    )?
-                ));
-                parse_index = body_end + 1;
-            },
-            &Token::Keyword(Keyword::Do) => {
-                let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(Symbol::Semi))?;
-                let first_identifier = parse_identifier(&tokens[parse_index + 1])?;
-                statements.push(Statement::Do(
-                    // TODO this should be a subroutine call
-                    parse_subroutine_call(&first_identifier, &tokens[parse_index + 2..end_index])?
-                ));
-                parse_index = end_index + 1;
-            },
-            &Token::Keyword(Keyword::Return) => {
-                let end_index = parse_index + find_token_index(&tokens[parse_index..], Token::Symbol(Symbol::Semi))?;
-                statements.push(Statement::Return(
-                    parse_expression(&tokens[parse_index + 1..end_index])?
-                ));
-                parse_index = end_index + 1;
-            },
-            _ => return Err(ParseError {
-                message: format!("unexpected keyword to begin statement: {:?}", begin_token)
-            }),
-        }
+            // so much duplicate code, how do i factor this out? can't quite get a function that
+            // returns a "balancer" closure working :/
+            let mut curly_balance = 0;
+            let if_body_tokens = peekable.by_ref().take_while(|t| {
+                match t {
+                    &&Token::Symbol(Symbol::OpenCurly) => curly_balance += 1,
+                    &&Token::Symbol(Symbol::CloseCurly) => curly_balance -= 1,
+                    _ => ()
+                }
+                curly_balance != 0
+            }).map(|t| t.clone()).collect::<Vec<_>>();
+
+            let has_else_body = peekable.by_ref().peek() == Some(&&Token::Keyword(Keyword::Else));
+            let else_body_tokens = if has_else_body {
+                let mut balance = 0;
+                peekable.by_ref().skip(1).take_while(|t| {
+                    match t {
+                        &&Token::Symbol(Symbol::OpenCurly) => balance += 1,
+                        &&Token::Symbol(Symbol::CloseCurly) => balance -= 1,
+                        _ => ()
+                    }
+                    balance != 0
+                }).map(|t| t.clone()).collect::<Vec<_>>()
+            } else { vec![] };
+
+            Statement::If(
+                parse_if_statement(
+                    &condition_tokens[1..],
+                    &if_body_tokens[1..],
+                    if has_else_body { Some(&else_body_tokens[1..]) } else { None }
+                )?
+            )
+        },
+        Some(&Token::Keyword(Keyword::While)) => {
+            let mut paren_balance = 0;
+            let condition_tokens = peekable.by_ref().take_while(|t| {
+                match t {
+                    &&Token::Symbol(Symbol::OpenParen) => paren_balance += 1,
+                    &&Token::Symbol(Symbol::CloseParen) => paren_balance -= 1,
+                    _ => ()
+                }
+                paren_balance != 0
+            }).map(|t| t.clone()).collect::<Vec<_>>();
+
+            let mut curly_balance = 0;
+            let body_tokens = peekable.by_ref().take_while(|t| {
+                match t {
+                    &&Token::Symbol(Symbol::OpenCurly) => curly_balance += 1,
+                    &&Token::Symbol(Symbol::CloseCurly) => curly_balance -= 1,
+                    _ => ()
+                }
+                curly_balance != 0
+            }).map(|t| t.clone()).collect::<Vec<_>>();
+
+            Statement::While(
+                parse_while_statement(&condition_tokens[1..], &body_tokens[1..])?
+            )
+        },
+        Some(&Token::Keyword(Keyword::Do)) => {
+            let first_identifier = parse_identifier(
+                peekable.by_ref().next().ok_or(ParseError { message: "malformed subroutine call".to_string() })?
+            )?;
+            let rest_tokens = peekable.by_ref()
+                .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
+                .map(|t| t.clone()).collect::<Vec<_>>();
+            Statement::Do(parse_subroutine_call(&first_identifier, &rest_tokens)?)
+        },
+        Some(&Token::Keyword(Keyword::Return)) => {
+            let return_tokens = peekable.by_ref()
+                .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
+                .map(|t| t.clone()).collect::<Vec<_>>();
+            Statement::Return(parse_expression(&return_tokens)?)
+        },
+        _ => return Err(ParseError {
+            message: format!("unexpected keyword to begin statement: {:?}", tokens[0]),
+        }),
+    };
+    let mut result = vec![first_statement];
+    if peekable.peek() != None { // more statements to be processed, recur
+        result.extend(parse_statements(
+            &peekable.map(|t| t.clone()).collect::<Vec<_>>()
+        )?);
     }
-    Ok(statements)
+    Ok(result)
 }
 
 fn parse_subroutine_body(body: &[Token]) -> Result<SubroutineBody, ParseError> {
