@@ -500,42 +500,6 @@ pub struct ParseError {
     message: String,
 }
 
-fn find_token_index(tokens: &[Token], close: Token) -> Result<usize, ParseError> {
-    for (index, token) in tokens.iter().enumerate() {
-        if *token == close {
-            return Ok(index)
-        }
-    }
-    Err(ParseError {
-        message: format!("could not find closing symbol {:?}", close),
-    })
-}
-
-fn balance_symbol(tokens: &[Token], open: Symbol, close: Symbol) -> Result<usize, ParseError> {
-    let mut balance = 1;
-    if tokens[0] != Token::Symbol(open) {
-        return Err(ParseError {
-            // how to maintain context so these errors are more sensible?
-            message: format!("unable to balance symbols: expected {} in first position, got {:?}", open, tokens[0])
-        })
-    }
-    for (index, token) in tokens[1..].iter().enumerate() {
-        if let Token::Symbol(ref t) = *token {
-            if t == &open {
-                balance += 1;
-            } else if t == &close {
-                balance -= 1
-            }
-        }
-        if balance == 0 {
-            return Ok(index + 1) // loop started at index 1
-        }
-    }
-    Err(ParseError {
-        message: format!("unbalanced symbols {} and {}", open, close),
-    })
-}
-
 fn parse_type(token: &Token) -> Result<Type, ParseError> {
     match token {
         &Token::Keyword(Keyword::Int) => Ok(Type::Int),
@@ -971,23 +935,21 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
     Ok(result)
 }
 
-fn parse_subroutine_body(body: &[Token]) -> Result<SubroutineBody, ParseError> {
-    let mut parse_index = 0;
+fn parse_subroutine_body(tokens: &[Token]) -> Result<SubroutineBody, ParseError> {
+    let mut peekable = tokens.iter().peekable();
     let mut var_declarations = vec![];
-    while parse_index < body.len() {
-        let current_token = &body[parse_index];
-        if current_token == &Token::Keyword(Keyword::Var) {
-            let declaration_start = parse_index + 1;
-            let declaration_end = declaration_start +
-                find_token_index(&body[declaration_start..], Token::Symbol(Symbol::Semi))?;
-            var_declarations.push(parse_var(&body[declaration_start..declaration_end])?);
-            parse_index = declaration_end + 1;
+    while let Some(&&Token::Keyword(kw)) = peekable.peek() {
+        if kw == Keyword::Var {
+            let declaration_tokens = peekable.by_ref()
+                .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
+                .map(|t| t.clone()).collect::<Vec<_>>();
+            var_declarations.push(parse_var(&declaration_tokens[1..])?);
         } else {
             break;
         }
     }
 
-    let statements = parse_statements(&body[parse_index..])?;
+    let statements = parse_statements(&peekable.map(|t| t.clone()).collect::<Vec<_>>())?;
 
     Ok(SubroutineBody { var_declarations, statements })
 }
@@ -1108,21 +1070,29 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
-    if tokens[0] == Token::Keyword(Keyword::Class) {
-        if let Token::Identifier(ref classname) = tokens[1] {
-            let body_end = balance_symbol(&tokens[2..], Symbol::OpenCurly, Symbol::CloseCurly)?;
-            Ok(Class {
-                name: classname.to_string(),
-                body: parse_class_body(&tokens[3..body_end + 2])?,
-            })
-        } else {
-            Err(ParseError {
-                message: format!("expected an identifier after `class`, got {:?}", tokens[1]),
-            })
-        }
+    let mut tokens_iter = tokens.iter();
+    if tokens_iter.next() != Some(&Token::Keyword(Keyword::Class)) {
+        return Err(ParseError {
+            message: format!("expected first token in file to be `class` keyword, got {:?}", tokens[0]),
+        })
+    }
+    if let Some(&Token::Identifier(ref classname)) = tokens_iter.next() {
+        let mut balance = 0;
+        let body_tokens = tokens_iter.by_ref().take_while(|t| {
+            match t {
+                &&Token::Symbol(Symbol::OpenCurly) => balance += 1,
+                &&Token::Symbol(Symbol::CloseCurly) => balance -= 1,
+                _ => ()
+            }
+            balance != 0
+        }).map(|t| t.clone()).collect::<Vec<_>>();
+        Ok(Class {
+            name: classname.to_string(),
+            body: parse_class_body(&body_tokens[1..])?,
+        })
     } else {
         Err(ParseError {
-            message: format!("expected first token in file to be `class` keyword, got {:?}", tokens[0]),
+            message: format!("expected an identifier after `class`, got {:?}", tokens[1]),
         })
     }
 }
@@ -1130,56 +1100,6 @@ pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn test_find_token_index() {
-        assert_eq!(find_token_index(
-            &[
-                Token::Keyword(Keyword::Static),
-                Token::Keyword(Keyword::Int),
-                Token::Identifier("a".to_string()),
-                Token::Symbol(Symbol::Comma),
-                Token::Identifier("b".to_string()),
-                Token::Symbol(Symbol::Semi),
-                Token::Keyword(Keyword::Constructor),
-            ],
-            Token::Symbol(Symbol::Semi),
-        ).unwrap(), 5);
-    }
-
-    #[test]
-    fn test_balance_symbol_simple() {
-        assert_eq!(balance_symbol(
-            &[
-                Token::Symbol(Symbol::OpenCurly),
-                Token::Keyword(Keyword::Do),
-                Token::Identifier("blargh".to_string()),
-                Token::Symbol(Symbol::OpenParen),
-                Token::Symbol(Symbol::CloseParen),
-                Token::Symbol(Symbol::Semi),
-                Token::Symbol(Symbol::CloseCurly),
-            ],
-            Symbol::OpenCurly,
-            Symbol::CloseCurly
-        ).unwrap(), 6);
-    }
-
-    #[test]
-    fn test_balance_symbol_complex() {
-        assert_eq!(balance_symbol(
-            &[
-                Token::Symbol(Symbol::OpenCurly),
-                Token::Symbol(Symbol::OpenCurly),
-                Token::Keyword(Keyword::Return),
-                Token::IntegerConstant(1),
-                Token::Symbol(Symbol::Semi),
-                Token::Symbol(Symbol::CloseCurly),
-                Token::Symbol(Symbol::CloseCurly),
-            ],
-            Symbol::OpenCurly,
-            Symbol::CloseCurly
-        ).unwrap(), 6);
-    }
 
     #[test]
     fn test_parse_outer() {
