@@ -784,12 +784,10 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
         ParseError::new("missing identifier in let statement")
     )?)?;
 
-    let index_expression = if let Some(&&Token::Symbol(Symbol::OpenSquare)) = peekable.peek() {
+    let index_expression = if peekable.peek() == Some(&&Token::Symbol(Symbol::OpenSquare)) {
         let index_expr_tokens = balanced!(peekable, 0, Symbol::OpenSquare, Symbol::CloseSquare);
         Some(parse_expression(&index_expr_tokens[1..])?) // omit open square bracket
-    } else {
-        None
-    };
+    } else { None };
 
     // skip over the equals sign
     expect(peekable.next() == Some(&Token::Symbol(Symbol::Eq)), "missing equals sign in let statement")?;
