@@ -2,16 +2,19 @@ use std::fmt;
 use std::convert::TryInto;
 use tokenize::{Token, Symbol, Keyword};
 
-// a macro that generates a callback for take_while
-macro_rules! create_balancer {
-    ($balance: ident, $open: pat, $close: pat) => (
-        |t| {
-            match t {
-                &&Token::Symbol($open) => $balance += 1,
-                &&Token::Symbol($close) => $balance -= 1,
-                _ => (),
-            }
-            $balance != 0
+// get a vector of tokens from $iterator that are balanced between $open and $close, given an $initial_balance
+macro_rules! balanced {
+    ($iterator: expr, $initial_balance: expr, $open: pat, $close: pat) => (
+        {
+            let mut balance = $initial_balance;
+            $iterator.by_ref().take_while(|t| {
+                match t {
+                    &&Token::Symbol($open) => balance += 1,
+                    &&Token::Symbol($close) => balance -= 1,
+                    _ => (),
+                }
+                balance != 0
+            }).map(|t| t.clone()).collect::<Vec<_>>()
         }
     )
 }
@@ -657,10 +660,7 @@ fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Resul
         (None, first_identifier.to_string())
     };
 
-    let mut balance = 0;
-    let params_tokens = peekable.by_ref().take_while(
-        create_balancer!(balance, Symbol::OpenParen, Symbol::CloseParen)
-    ).map(|t| t.clone()).collect::<Vec<_>>();
+    let params_tokens = balanced!(peekable, 0, Symbol::OpenParen, Symbol::CloseParen);
     let parameters = parse_expression_list(&params_tokens[1..])?; // drop opening paren
 
     Ok(SubroutineCall {
@@ -697,11 +697,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
 
             if next == Some(&&Token::Symbol(Symbol::OpenSquare)) {
                 // parse index expr
-                let mut balance = 0; // already consumed the open paren
-                let index_expr_tokens = peekable.by_ref().take_while(
-                    create_balancer!(balance, Symbol::OpenSquare, Symbol::CloseSquare)
-                ).map(|t| t.clone()).collect::<Vec<Token>>();
-
+                let index_expr_tokens = balanced!(peekable, 0, Symbol::OpenSquare, Symbol::CloseSquare);
                 Term::IndexExpr(id.to_string(), parse_expression(&index_expr_tokens[1..])?)
 
             } else if next == Some(&&Token::Symbol(Symbol::OpenParen)) ||
@@ -713,10 +709,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                     .map(|t| t.clone()).collect::<Vec<Token>>();
 
                 // grab the params
-                let mut paren_balance = 1; // already ate the open paren
-                let params_tokens = peekable.by_ref().take_while(
-                    create_balancer!(paren_balance, Symbol::OpenParen, Symbol::CloseParen)
-                ).map(|t| t.clone()).collect::<Vec<Token>>();
+                let params_tokens = balanced!(peekable, 1, Symbol::OpenParen, Symbol::CloseParen);
 
                 // put everything back into one list (parens included) for `parse_subroutine_call` :/
                 call_tokens.push(Token::Symbol(Symbol::OpenParen));
@@ -751,10 +744,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 return Ok(result);
             } else if s == Symbol::OpenParen {
                 // parenthetical expression
-                let mut balance = 1; // already consumed the open paren
-                let parenthetical_tokens = peekable.by_ref().take_while(
-                    create_balancer!(balance, Symbol::OpenParen, Symbol::CloseParen)
-                ).map(|t| t.clone()).collect::<Vec<Token>>();
+                let parenthetical_tokens = balanced!(peekable, 1, Symbol::OpenParen, Symbol::CloseParen);
                 Term::Parenthetical(parse_expression(&parenthetical_tokens)?)
             } else {
                 return Err(ParseError {
@@ -797,12 +787,8 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
     })?)?;
 
     let index_expression = if let Some(&&Token::Symbol(Symbol::OpenSquare)) = peekable.peek() {
-        let mut balance = 1; // hop over the open square bracket we already peeked
-        let index_expr_tokens = peekable.by_ref().skip(1).take_while(
-            create_balancer!(balance, Symbol::OpenSquare, Symbol::CloseSquare)
-            // todo: is there a way to make this 👇 simpler?
-        ).map(|t| t.clone()).collect::<Vec<Token>>();
-        Some(parse_expression(&index_expr_tokens)?) // omit open square bracket
+        let index_expr_tokens = balanced!(peekable, 0, Symbol::OpenSquare, Symbol::CloseSquare);
+        Some(parse_expression(&index_expr_tokens[1..])?) // omit open square bracket
     } else {
         None
     };
@@ -851,22 +837,12 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
             Statement::Let(parse_let_statement(&let_tokens)?)
         },
         Some(&Token::Keyword(Keyword::If)) => {
-            let mut paren_balance = 0;
-            let condition_tokens = peekable.by_ref().take_while(
-                create_balancer!(paren_balance, Symbol::OpenParen, Symbol::CloseParen)
-            ).map(|t| t.clone()).collect::<Vec<_>>();
-
-            let mut curly_balance = 0;
-            let if_body_tokens = peekable.by_ref().take_while(
-                create_balancer!(curly_balance, Symbol::OpenCurly, Symbol::CloseCurly)
-            ).map(|t| t.clone()).collect::<Vec<_>>();
+            let condition_tokens = balanced!(peekable, 0, Symbol::OpenParen, Symbol::CloseParen);
+            let if_body_tokens = balanced!(peekable, 0, Symbol::OpenCurly, Symbol::CloseCurly);
 
             let has_else_body = peekable.by_ref().peek() == Some(&&Token::Keyword(Keyword::Else));
             let else_body_tokens = if has_else_body {
-                let mut else_curly_balance = 0;
-                peekable.by_ref().skip(1).take_while(
-                    create_balancer!(else_curly_balance, Symbol::OpenCurly, Symbol::CloseCurly)
-                ).map(|t| t.clone()).collect::<Vec<_>>()
+                balanced!(peekable.by_ref().skip(1), 0, Symbol::OpenCurly, Symbol::CloseCurly)
             } else { vec![] };
 
             Statement::If(
@@ -878,16 +854,8 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
             )
         },
         Some(&Token::Keyword(Keyword::While)) => {
-            let mut paren_balance = 0;
-            let condition_tokens = peekable.by_ref().take_while(
-                create_balancer!(paren_balance, Symbol::OpenParen, Symbol::CloseParen)
-            ).map(|t| t.clone()).collect::<Vec<_>>();
-
-            let mut curly_balance = 0;
-            let body_tokens = peekable.by_ref().take_while(
-                create_balancer!(curly_balance, Symbol::OpenCurly, Symbol::CloseCurly)
-            ).map(|t| t.clone()).collect::<Vec<_>>();
-
+            let condition_tokens = balanced!(peekable, 0, Symbol::OpenParen, Symbol::CloseParen);
+            let body_tokens = balanced!(peekable, 0, Symbol::OpenCurly, Symbol::CloseCurly);
             Statement::While(
                 parse_while_statement(&condition_tokens[1..], &body_tokens[1..])?
             )
@@ -1012,10 +980,7 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
                 });
             }
 
-            let mut curly_balance = 1;
-            let body_tokens = peekable.by_ref().take_while(
-                create_balancer!(curly_balance, Symbol::OpenCurly, Symbol::CloseCurly)
-            ).map(|t| t.clone()).collect::<Vec<Token>>();
+            let body_tokens = balanced!(peekable, 1, Symbol::OpenCurly, Symbol::CloseCurly);
 
             let mut result = vec![
                 ClassBodyItem::Subroutine(
@@ -1047,10 +1012,7 @@ pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
         })
     }
     if let Some(&Token::Identifier(ref classname)) = tokens_iter.next() {
-        let mut balance = 0;
-        let body_tokens = tokens_iter.by_ref().take_while(
-            create_balancer!(balance, Symbol::OpenCurly, Symbol::CloseCurly)
-        ).map(|t| t.clone()).collect::<Vec<_>>();
+        let body_tokens = balanced!(tokens_iter, 0, Symbol::OpenCurly, Symbol::CloseCurly);
         Ok(Class {
             name: classname.to_string(),
             body: parse_class_body(&body_tokens[1..])?,
