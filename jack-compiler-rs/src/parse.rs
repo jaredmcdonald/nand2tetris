@@ -564,6 +564,10 @@ impl TryInto<Type> for Token {
     }
 }
 
+fn expect(cond: bool, msg: &str) -> Result<(), ParseError> {
+    if !cond { Err(ParseError::new(msg)) } else { Ok(()) }
+}
+
 fn parse_identifier(token: &Token) -> Result<String, ParseError> {
     if let &Token::Identifier(ref id) = token {
         Ok(id.to_string())
@@ -587,46 +591,44 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
 fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
     let mut params_list = vec![];
     let mut peekable = tokens.iter().peekable();
-    let err = || ParseError::new(&format!("malformed param list: {:?}", tokens));
+    let err_msg = format!("malformed param list: {:?}", tokens);
     loop {
         let first = peekable.next();
-        if first == None {
+        if first.is_none() {
             break;
         }
         let param_type: Type = first.unwrap().clone().try_into()?;
-        let name = parse_identifier(peekable.next().ok_or(err())?)?;
+        let name = parse_identifier(peekable.next().ok_or(ParseError::new(&err_msg))?)?;
         params_list.push(Param { param_type, name });
         let next = peekable.next();
         if let Some(&Token::Symbol(ref s)) = next {
-            if s == &Symbol::Comma {
-                if peekable.peek() == None {
-                    return Err(err()); // trailing comma
-                }
+            if *s == Symbol::Comma {
+                expect(peekable.peek().is_some(), &err_msg)?; // trailing comma
                 continue;
             }
-        } else if next == None {
+        } else if next.is_none() {
             break;
         }
-        return Err(err());
+        return Err(ParseError::new(&err_msg));
     }
     Ok(params_list)
 }
 
 fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
-    let err = || ParseError::new(&format!("malformed var declaration: {:?}", tokens));
+    let err_msg = format!("malformed var declaration: {:?}", tokens);
     let mut peekable = tokens.iter().peekable();
-    let data_type: Type = peekable.next().ok_or(err())?.clone().try_into()?;
+    let data_type: Type = peekable.next().ok_or(ParseError::new(&err_msg))?.clone().try_into()?;
     let mut names = vec![];
     while let Some(name) = peekable.next() {
         names.push(parse_identifier(name)?);
         let comma_token = peekable.by_ref().next();
-        if comma_token == None {
+        if comma_token.is_none() {
             break;
-        } else if comma_token.unwrap() == &Token::Symbol(Symbol::Comma) &&
-                  peekable.by_ref().peek() != None {
-            continue;
         }
-        return Err(err());
+        expect(
+            *comma_token.unwrap() == Token::Symbol(Symbol::Comma) && peekable.by_ref().peek().is_some(),
+            &err_msg
+        )?;
     }
     Ok(Var { names, data_type })
 }
@@ -682,18 +684,18 @@ fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Resul
 fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, ParseError> {
     let mut peekable = tokens.iter().peekable();
     let next = peekable.next();
-    if next == None {
+    if next.is_none() {
         return Ok(vec![]);
     }
     let term = match *next.unwrap() {
         Token::IntegerConstant(ref i) => Term::IntegerConstant(*i),
         Token::StringConstant(ref s) => Term::StringConstant(s.to_string()),
         Token::Keyword(ref k) => {
-            if k == &Keyword::True || k == &Keyword::False || k == &Keyword::Null || k == &Keyword::This {
-                Term::KeywordConstant(*k)
-            } else {
-                return Err(ParseError::new(&format!("unexpected keyword `{:?}` in expression", k)));
-            }
+            expect(
+                k == &Keyword::True || k == &Keyword::False || k == &Keyword::Null || k == &Keyword::This,
+                &format!("unexpected keyword `{:?}` in expression", k)
+            )?;
+            Term::KeywordConstant(*k)
         },
         Token::Identifier(ref id) => {
             // how to avoid this? the problem was that i need to match on the value of
@@ -760,7 +762,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
     let mut expressions = vec![ExpressionItem::Term(term)];
     let op_token = peekable.next();
 
-    if op_token == None {
+    if op_token.is_none() {
         return Ok(expressions); // base case
     } else {
         if let &Token::Symbol(sym) = op_token.unwrap() {
@@ -769,14 +771,11 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
             return Err(ParseError::new("expected an operation"));
         }
     }
-    if peekable.peek() == None {
-        Err(ParseError::new("trailing operation in expression, expected a term"))
-    } else {
-        expressions.extend(
-            parse_expression_inner(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?
-        );
-        Ok(expressions)
-    }
+    expect(peekable.peek().is_some(), "trailing operation in expression, expected a term")?;
+    expressions.extend(
+        parse_expression_inner(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?
+    );
+    Ok(expressions)
 }
 
 fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
@@ -793,9 +792,7 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
     };
 
     // skip over the equals sign
-    if peekable.next() != Some(&Token::Symbol(Symbol::Eq)) {
-        return Err(ParseError::new("missing equals sign in let statement"));
-    }
+    expect(peekable.next() == Some(&Token::Symbol(Symbol::Eq)), "missing equals sign in let statement")?;
 
     let expression = parse_expression(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?;
     Ok(LetStatement { name, expression, index_expression })
@@ -877,7 +874,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
         _ => return Err(ParseError::new(&format!("unexpected keyword to begin statement: {:?}", tokens[0]))),
     };
     let mut result = vec![first_statement];
-    if peekable.peek() != None { // more statements to be processed, recur
+    if peekable.peek().is_some() { // more statements to be processed, recur
         result.extend(parse_statements(
             &peekable.map(|t| t.clone()).collect::<Vec<_>>()
         )?);
@@ -962,16 +959,19 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
                 ParseError::new("expected name in subroutine declaration")
             )?;
 
-            if peekable.next() != Some(&&Token::Symbol(Symbol::OpenParen)) {
-                return Err(ParseError::new("expected `(` to open parameters list"));
-            }
+            expect(
+                peekable.next() == Some(&&Token::Symbol(Symbol::OpenParen)),
+                "expected `(` to open parameters list"
+            )?;
+
             let params_tokens = peekable.by_ref()
                 .take_while(|t| t != &&Token::Symbol(Symbol::CloseParen))
                 .map(|t| t.clone()).collect::<Vec<Token>>();
 
-            if peekable.next() != Some(&&Token::Symbol(Symbol::OpenCurly)) {
-                return Err(ParseError::new("expected `{` to open subroutine body"));
-            }
+            expect(
+                peekable.next() == Some(&&Token::Symbol(Symbol::OpenCurly)),
+                "expected `{` to open subroutine body"
+            )?;
 
             let body_tokens = balanced!(peekable, 1, Symbol::OpenCurly, Symbol::CloseCurly);
 
@@ -997,11 +997,10 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
 
 pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
     let mut tokens_iter = tokens.iter();
-    if tokens_iter.next() != Some(&Token::Keyword(Keyword::Class)) {
-        return Err(
-            ParseError::new(&format!("expected first token in file to be `class` keyword, got {:?}", tokens[0]))
-        )
-    }
+    expect(
+        tokens_iter.next() == Some(&Token::Keyword(Keyword::Class)),
+        &format!("expected first token in file to be `class` keyword, got {:?}", tokens[0])
+    )?;
     if let Some(&Token::Identifier(ref classname)) = tokens_iter.next() {
         let body_tokens = balanced!(tokens_iter, 0, Symbol::OpenCurly, Symbol::CloseCurly);
         Ok(Class {
