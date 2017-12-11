@@ -123,9 +123,10 @@ pub struct SubroutineCall {
 
 impl fmt::Display for SubroutineCall {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let parent_prefix = if let Some(ref p) = self.parent_name {
+        let parent_prefix = self.parent_name.as_ref().map_or("".to_owned(), |p| {
             format!("<identifier>{}</identifier>\n<symbol>.</symbol>\n", p)
-        } else { "".to_string() };
+        });
+
         let param_list = self.parameters.iter()
             .map(|expr| format!("{}\n", expr))
             .collect::<Vec<String>>().join("<symbol>,</symbol>\n");
@@ -250,7 +251,7 @@ pub struct IfStatement {
 impl fmt::Display for IfStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let if_body = self.if_body.iter().map(|t| format!("{}", t)).collect::<Vec<_>>().join("\n");
-        let maybe_else = if let Some(ref else_body) = self.else_body {
+        let maybe_else = self.else_body.as_ref().map_or("".to_owned(), |else_body| {
             format!(
                 "\n<keyword>else</keyword>
                 <symbol>{{</symbol>
@@ -260,7 +261,7 @@ impl fmt::Display for IfStatement {
                 <symbol>}}</symbol>",
                 else_body.iter().map(|t| format!("{}", t)).collect::<Vec<_>>().join("\n")
             )
-        } else { "".to_string() };
+        });
         write!(f,
             "<keyword>if</keyword>
             <symbol>(</symbol>
@@ -287,12 +288,12 @@ pub struct LetStatement {
 
 impl fmt::Display for LetStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let maybe_index_expression = if let Some(ref index_expr) = self.index_expression {
+        let maybe_index_expression = self.index_expression.as_ref().map_or("".to_owned(), |index_expr| {
             format!(
                 "\n<symbol>[</symbol>
                     {}
                  <symbol>]</symbol>", index_expr)
-        } else { "".to_string() };
+        });
         write!(f, "<keyword>let</keyword>
             <identifier>{}</identifier>{}
             <symbol>=</symbol>
