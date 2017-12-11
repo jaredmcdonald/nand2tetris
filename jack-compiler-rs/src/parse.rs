@@ -577,14 +577,15 @@ fn parse_identifier(token: &Token) -> Result<String, ParseError> {
     }
 }
 
-fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
-    let var_type = match body[0] {
-        Token::Keyword(Keyword::Static) => ClassVarType::Static,
-        Token::Keyword(Keyword::Field) => ClassVarType::Field,
-        _ => return Err(ParseError::new(&format!("unexpected token in class var declaration: {:?}", body[0]))),
+fn parse_class_var(tokens: &[Token]) -> Result<ClassVar, ParseError> {
+    let mut tokens_iter = tokens.iter();
+    let var_type = match tokens_iter.next() {
+        Some(&Token::Keyword(Keyword::Static)) => ClassVarType::Static,
+        Some(&Token::Keyword(Keyword::Field)) => ClassVarType::Field,
+        _ => return Err(ParseError::new(&format!("unexpected token in class var declaration: {:?}", tokens))),
     };
 
-    let var = parse_var(&body[1..])?;
+    let var = parse_var(&tokens_iter.map(|t| t.clone()).collect::<Vec<_>>())?;
 
     Ok(ClassVar { var_type, var })
 }
