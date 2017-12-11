@@ -30,11 +30,12 @@ pub enum Statement {
 
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Statement::*;
         match *self {
-            Statement::Let(ref s) => write!(f, "<letStatement>\n{}\n</letStatement>", s),
-            Statement::If(ref s) => write!(f, "<ifStatement>\n{}\n</ifStatement>", s),
-            Statement::While(ref s) => write!(f, "<whileStatement>\n{}\n</whileStatement>", s),
-            Statement::Do(ref s) => {
+            Let(ref s) => write!(f, "<letStatement>\n{}\n</letStatement>", s),
+            If(ref s) => write!(f, "<ifStatement>\n{}\n</ifStatement>", s),
+            While(ref s) => write!(f, "<whileStatement>\n{}\n</whileStatement>", s),
+            Do(ref s) => {
                 write!(f,
                     "<doStatement>
                         <keyword>do</keyword>
@@ -43,7 +44,7 @@ impl fmt::Display for Statement {
                     s
                 )
             },
-            Statement::Return(ref s) => {
+            Return(ref s) => {
                 let maybe_expr = if s.0.len() > 0 { format!("\n{}", s) } else { "".to_string() };
                 write!(f,
                     "<returnStatement>
@@ -77,9 +78,9 @@ impl TryInto<UnaryOp> for Symbol {
 
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            &UnaryOp::Neg => Token::Symbol(Symbol::Minus),
-            &UnaryOp::Not => Token::Symbol(Symbol::Not),
+        write!(f, "{}", match *self {
+            UnaryOp::Neg => Token::Symbol(Symbol::Minus),
+            UnaryOp::Not => Token::Symbol(Symbol::Not),
         })
     }
 }
@@ -99,16 +100,16 @@ pub enum BinaryOp {
 
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", match self {
-            &BinaryOp::Plus => Token::Symbol(Symbol::Plus),
-            &BinaryOp::Minus => Token::Symbol(Symbol::Minus),
-            &BinaryOp::Mult => Token::Symbol(Symbol::Mult),
-            &BinaryOp::Div => Token::Symbol(Symbol::Div),
-            &BinaryOp::And => Token::Symbol(Symbol::Amp),
-            &BinaryOp::Or => Token::Symbol(Symbol::Pipe),
-            &BinaryOp::Lt => Token::Symbol(Symbol::Lt),
-            &BinaryOp::Gt => Token::Symbol(Symbol::Gt),
-            &BinaryOp::Eq => Token::Symbol(Symbol::Eq),
+        write!(f, "{}", match *self {
+            BinaryOp::Plus => Token::Symbol(Symbol::Plus),
+            BinaryOp::Minus => Token::Symbol(Symbol::Minus),
+            BinaryOp::Mult => Token::Symbol(Symbol::Mult),
+            BinaryOp::Div => Token::Symbol(Symbol::Div),
+            BinaryOp::And => Token::Symbol(Symbol::Amp),
+            BinaryOp::Or => Token::Symbol(Symbol::Pipe),
+            BinaryOp::Lt => Token::Symbol(Symbol::Lt),
+            BinaryOp::Gt => Token::Symbol(Symbol::Gt),
+            BinaryOp::Eq => Token::Symbol(Symbol::Eq),
         })
     }
 }
@@ -164,9 +165,9 @@ pub enum ExpressionItem {
 
 impl fmt::Display for ExpressionItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &ExpressionItem::Term(ref t) => write!(f, "{}", t),
-            &ExpressionItem::Operation(ref o) => write!(f, "{}", o),
+        match *self {
+            ExpressionItem::Term(ref t) => write!(f, "{}", t),
+            ExpressionItem::Operation(ref o) => write!(f, "{}", o),
         }
     }
 }
@@ -185,20 +186,21 @@ pub enum Term {
 
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<term>\n{}</term>", match self {
-            &Term::IntegerConstant(ref i) => format!("<integerConstant>{}</integerConstant>\n", i),
-            &Term::StringConstant(ref s) => format!("<stringConstant>{}</stringConstant>\n", s),
-            &Term::KeywordConstant(ref k) => format!("<keyword>{}</keyword>\n", k),
-            &Term::VarName(ref v) => format!("<identifier>{}</identifier>\n", v),
-            &Term::Unary(ref op, ref term) => format!("{}\n{}\n", op, term),
-            &Term::Parenthetical(ref e) => format!("<symbol>(</symbol>\n{}\n<symbol>)</symbol>\n", e),
-            &Term::IndexExpr(ref var_name, ref expr) => format!(
+        use self::Term::*;
+        write!(f, "<term>\n{}</term>", match *self {
+            IntegerConstant(ref i) => format!("<integerConstant>{}</integerConstant>\n", i),
+            StringConstant(ref s) => format!("<stringConstant>{}</stringConstant>\n", s),
+            KeywordConstant(ref k) => format!("<keyword>{}</keyword>\n", k),
+            VarName(ref v) => format!("<identifier>{}</identifier>\n", v),
+            Unary(ref op, ref term) => format!("{}\n{}\n", op, term),
+            Parenthetical(ref e) => format!("<symbol>(</symbol>\n{}\n<symbol>)</symbol>\n", e),
+            IndexExpr(ref var_name, ref expr) => format!(
                     "<identifier>{}</identifier>
                     <symbol>[</symbol>
                     {}
                     <symbol>]</symbol>\n",
                 var_name, expr),
-            &Term::SubroutineCall(ref s) => format!("{}", s),
+            SubroutineCall(ref s) => format!("{}", s),
         })
     }
 }
@@ -325,10 +327,10 @@ impl TryInto<SubroutineType> for Keyword {
 
 impl fmt::Display for SubroutineType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<keyword>{}</keyword>", match self {
-            &SubroutineType::Constructor => "constructor",
-            &SubroutineType::Function => "function",
-            &SubroutineType::Method => "method",
+        write!(f, "<keyword>{}</keyword>", match *self {
+            SubroutineType::Constructor => "constructor",
+            SubroutineType::Function => "function",
+            SubroutineType::Method => "method",
         })
     }
 }
@@ -341,9 +343,9 @@ pub enum SubroutineReturnType {
 
 impl fmt::Display for SubroutineReturnType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &SubroutineReturnType::Void => write!(f, "<keyword>void</keyword>"),
-            &SubroutineReturnType::Type(ref t) => write!(f, "{}", t),
+        match *self {
+            SubroutineReturnType::Void => write!(f, "<keyword>void</keyword>"),
+            SubroutineReturnType::Type(ref t) => write!(f, "{}", t),
         }
     }
 }
@@ -435,9 +437,9 @@ pub enum ClassVarType {
 
 impl fmt::Display for ClassVarType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<keyword>{}</keyword>", match self {
-            &ClassVarType::Field => "field",
-            &ClassVarType::Static => "static",
+        write!(f, "<keyword>{}</keyword>", match *self {
+            ClassVarType::Field => "field",
+            ClassVarType::Static => "static",
         })
     }
 }
@@ -450,9 +452,9 @@ pub enum ClassBodyItem {
 
 impl fmt::Display for ClassBodyItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &ClassBodyItem::ClassVar(ref cv) => write!(f, "{}", cv),
-            &ClassBodyItem::Subroutine(ref sr) => write!(f, "{}", sr),
+        match *self {
+            ClassBodyItem::ClassVar(ref cv) => write!(f, "{}", cv),
+            ClassBodyItem::Subroutine(ref sr) => write!(f, "{}", sr),
         }
     }
 }
@@ -467,11 +469,12 @@ pub enum Type {
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Type::Int => write!(f, "<keyword>int</keyword>"),
-            &Type::Char => write!(f, "<keyword>char</keyword>"),
-            &Type::Boolean => write!(f, "<keyword>boolean</keyword>"),
-            &Type::Class(ref s) => write!(f, "<identifier>{}</identifier>", s),
+        use self::Type::*;
+        match *self {
+            Int => write!(f, "<keyword>int</keyword>"),
+            Char => write!(f, "<keyword>char</keyword>"),
+            Boolean => write!(f, "<keyword>boolean</keyword>"),
+            Class(ref s) => write!(f, "<identifier>{}</identifier>", s),
         }
     }
 }
@@ -541,6 +544,12 @@ pub struct ParseError {
     message: String,
 }
 
+impl ParseError {
+    pub fn new(msg: &str) -> ParseError {
+        ParseError { message: msg.to_owned() }
+    }
+}
+
 impl TryInto<Type> for Token {
     type Error = ParseError;
 
@@ -550,7 +559,7 @@ impl TryInto<Type> for Token {
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
             Token::Keyword(Keyword::Boolean) => Ok(Type::Boolean),
             Token::Identifier(ref id) => Ok(Type::Class(id.to_string())),
-            _ => Err(ParseError { message: format!("expected a type, got token {:?}", self) }),
+            _ => Err(ParseError::new(&format!("expected a type, got token {:?}", self))),
         }
     }
 }
@@ -559,7 +568,7 @@ fn parse_identifier(token: &Token) -> Result<String, ParseError> {
     if let &Token::Identifier(ref id) = token {
         Ok(id.to_string())
     } else {
-        Err(ParseError { message: format!("expected identifier, found {:?}", token) })
+        Err(ParseError::new(&format!("expected identifier, found {:?}", token)))
     }
 }
 
@@ -567,7 +576,7 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
     let var_type = match body[0] {
         Token::Keyword(Keyword::Static) => ClassVarType::Static,
         Token::Keyword(Keyword::Field) => ClassVarType::Field,
-        _ => return Err(ParseError { message: format!("unexpected token in class var declaration: {:?}", body[0]) }),
+        _ => return Err(ParseError::new(&format!("unexpected token in class var declaration: {:?}", body[0]))),
     };
 
     let var = parse_var(&body[1..])?;
@@ -578,7 +587,7 @@ fn parse_class_var(body: &[Token]) -> Result<ClassVar, ParseError> {
 fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
     let mut params_list = vec![];
     let mut peekable = tokens.iter().peekable();
-    let err = || ParseError { message: format!("malformed param list: {:?}", tokens) };
+    let err = || ParseError::new(&format!("malformed param list: {:?}", tokens));
     loop {
         let first = peekable.next();
         if first == None {
@@ -604,7 +613,7 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
 }
 
 fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
-    let err = || ParseError { message: format!("malformed var declaration: {:?}", tokens) };
+    let err = || ParseError::new(&format!("malformed var declaration: {:?}", tokens));
     let mut peekable = tokens.iter().peekable();
     let data_type: Type = peekable.next().ok_or(err())?.clone().try_into()?;
     let mut names = vec![];
@@ -651,9 +660,9 @@ fn parse_subroutine_call(first_identifier: &str, rest_tokens: &[Token]) -> Resul
             // in this case we're dealing with a method call, so `first_identifier` is the parent name
             Some(first_identifier.to_string()),
             // skip the period and extract the identifier, which is the method name
-            parse_identifier(peekable.by_ref().skip(1).next().ok_or(ParseError {
-                message: "malformed subroutine call".to_string(),
-            })?)?
+            parse_identifier(peekable.by_ref().skip(1).next().ok_or(
+                ParseError::new("malformed subroutine call")
+            )?)?
         )
     } else {
         // otherwise there is no parent and `first_identifier` is a lone function name
@@ -676,19 +685,17 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
     if next == None {
         return Ok(vec![]);
     }
-    let term = match next.unwrap() {
-        &Token::IntegerConstant(ref i) => Term::IntegerConstant(*i),
-        &Token::StringConstant(ref s) => Term::StringConstant(s.to_string()),
-        &Token::Keyword(ref k) => {
+    let term = match *next.unwrap() {
+        Token::IntegerConstant(ref i) => Term::IntegerConstant(*i),
+        Token::StringConstant(ref s) => Term::StringConstant(s.to_string()),
+        Token::Keyword(ref k) => {
             if k == &Keyword::True || k == &Keyword::False || k == &Keyword::Null || k == &Keyword::This {
                 Term::KeywordConstant(*k)
             } else {
-                return Err(ParseError {
-                    message: format!("unexpected keyword `{:?}` in expression", k)
-                });
+                return Err(ParseError::new(&format!("unexpected keyword `{:?}` in expression", k)));
             }
         },
-        &Token::Identifier(ref id) => {
+        Token::Identifier(ref id) => {
             // how to avoid this? the problem was that i need to match on the value of
             // peekable.peek and consume some more tokens within the match arms, but that's
             // borrowing as mutable twice at once per the compiler
@@ -722,7 +729,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 Term::VarName(id.to_string())
             }
         },
-        &Token::Symbol(s) => {
+        Token::Symbol(s) => {
             if s == Symbol::Minus || s == Symbol::Not {
                 // unary op then term
                 let op: UnaryOp = s.try_into()?;
@@ -732,9 +739,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 let next_term = if let ExpressionItem::Term(ref t) = rest[0] {
                     t.clone()
                 } else {
-                    return Err(ParseError {
-                        message: "expected term after unary op".to_string(),
-                    });
+                    return Err(ParseError::new("expected term after unary op"));
                 };
 
                 let mut result = vec![
@@ -747,9 +752,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
                 let parenthetical_tokens = balanced!(peekable, 1, Symbol::OpenParen, Symbol::CloseParen);
                 Term::Parenthetical(parse_expression(&parenthetical_tokens)?)
             } else {
-                return Err(ParseError {
-                    message: format!("expected term, got symbol `{:?}` in expression", s)
-                });
+                return Err(ParseError::new(&format!("expected term, got symbol `{:?}` in expression", s)));
             }
         }
     };
@@ -763,15 +766,11 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
         if let &Token::Symbol(sym) = op_token.unwrap() {
             expressions.push(ExpressionItem::Operation(sym.try_into()?));
         } else {
-            return Err(ParseError {
-                message: "expected an operation".to_string(),
-            });
+            return Err(ParseError::new("expected an operation"));
         }
     }
     if peekable.peek() == None {
-        Err(ParseError {
-            message: "trailing operation in expression, expected a term".to_string(),
-        })
+        Err(ParseError::new("trailing operation in expression, expected a term"))
     } else {
         expressions.extend(
             parse_expression_inner(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?
@@ -782,9 +781,9 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
 
 fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
     let mut peekable = tokens.iter().peekable();
-    let name = parse_identifier(peekable.next().ok_or(ParseError {
-        message: "missing identifier in let statement".to_string(),
-    })?)?;
+    let name = parse_identifier(peekable.next().ok_or(
+        ParseError::new("missing identifier in let statement")
+    )?)?;
 
     let index_expression = if let Some(&&Token::Symbol(Symbol::OpenSquare)) = peekable.peek() {
         let index_expr_tokens = balanced!(peekable, 0, Symbol::OpenSquare, Symbol::CloseSquare);
@@ -795,7 +794,7 @@ fn parse_let_statement(tokens: &[Token]) -> Result<LetStatement, ParseError> {
 
     // skip over the equals sign
     if peekable.next() != Some(&Token::Symbol(Symbol::Eq)) {
-        return Err(ParseError { message: "missing equals sign in let statement".to_string() });
+        return Err(ParseError::new("missing equals sign in let statement"));
     }
 
     let expression = parse_expression(&peekable.map(|t| t.clone()).collect::<Vec<Token>>())?;
@@ -862,7 +861,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
         },
         Some(&Token::Keyword(Keyword::Do)) => {
             let first_identifier = parse_identifier(
-                peekable.by_ref().next().ok_or(ParseError { message: "malformed subroutine call".to_string() })?
+                peekable.by_ref().next().ok_or(ParseError::new("malformed subroutine call"))?
             )?;
             let rest_tokens = peekable.by_ref()
                 .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
@@ -875,9 +874,7 @@ fn parse_statements(tokens: &[Token]) -> Result<Vec<Statement>, ParseError> {
                 .map(|t| t.clone()).collect::<Vec<_>>();
             Statement::Return(parse_expression(&return_tokens)?)
         },
-        _ => return Err(ParseError {
-            message: format!("unexpected keyword to begin statement: {:?}", tokens[0]),
-        }),
+        _ => return Err(ParseError::new(&format!("unexpected keyword to begin statement: {:?}", tokens[0]))),
     };
     let mut result = vec![first_statement];
     if peekable.peek() != None { // more statements to be processed, recur
@@ -917,7 +914,7 @@ fn parse_subroutine(
     let subroutine_type: SubroutineType = if let &Token::Keyword(kw) = subroutine_type_token {
         kw.try_into()?
     } else {
-        return Err(ParseError { message: format!("expected keyword, got `{:?}`", subroutine_type_token) });
+        return Err(ParseError::new(&format!("expected keyword, got `{:?}`", subroutine_type_token)));
     };
 
     let return_type = if return_type_token == &Token::Keyword(Keyword::Void) {
@@ -959,25 +956,21 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
 
             let subroutine_type_token = peekable.next().unwrap(); // we've already peeked this token
             let return_type_token = peekable.next().ok_or(
-                ParseError { message: "expected return type in subroutine declaration".to_string() }
+                ParseError::new("expected return type in subroutine declaration")
             )?;
             let name_token = peekable.next().ok_or(
-                ParseError { message: "expected name in subroutine declaration".to_string() }
+                ParseError::new("expected name in subroutine declaration")
             )?;
 
             if peekable.next() != Some(&&Token::Symbol(Symbol::OpenParen)) {
-                return Err(ParseError {
-                    message: "expected `(` to open parameters list".to_string(),
-                });
+                return Err(ParseError::new("expected `(` to open parameters list"));
             }
             let params_tokens = peekable.by_ref()
                 .take_while(|t| t != &&Token::Symbol(Symbol::CloseParen))
                 .map(|t| t.clone()).collect::<Vec<Token>>();
 
             if peekable.next() != Some(&&Token::Symbol(Symbol::OpenCurly)) {
-                return Err(ParseError {
-                    message: "expected `{` to open subroutine body".to_string(),
-                });
+                return Err(ParseError::new("expected `{` to open subroutine body"));
             }
 
             let body_tokens = balanced!(peekable, 1, Symbol::OpenCurly, Symbol::CloseCurly);
@@ -999,17 +992,15 @@ fn parse_class_body(tokens: &[Token]) -> Result<Vec<ClassBodyItem>, ParseError> 
             return Ok(result);
         }
     }
-    Err(ParseError {
-        message: format!("unexpected token in class body: {:?}", tokens[0]),
-    })
+    Err(ParseError::new(&format!("unexpected token in class body: {:?}", tokens[0])))
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
     let mut tokens_iter = tokens.iter();
     if tokens_iter.next() != Some(&Token::Keyword(Keyword::Class)) {
-        return Err(ParseError {
-            message: format!("expected first token in file to be `class` keyword, got {:?}", tokens[0]),
-        })
+        return Err(
+            ParseError::new(&format!("expected first token in file to be `class` keyword, got {:?}", tokens[0]))
+        )
     }
     if let Some(&Token::Identifier(ref classname)) = tokens_iter.next() {
         let body_tokens = balanced!(tokens_iter, 0, Symbol::OpenCurly, Symbol::CloseCurly);
@@ -1018,9 +1009,7 @@ pub fn parse(tokens: &[Token]) -> Result<Class, ParseError> {
             body: parse_class_body(&body_tokens[1..])?,
         })
     } else {
-        Err(ParseError {
-            message: format!("expected an identifier after `class`, got {:?}", tokens[1]),
-        })
+        Err(ParseError::new(&format!("expected an identifier after `class`, got {:?}", tokens[1])))
     }
 }
 
