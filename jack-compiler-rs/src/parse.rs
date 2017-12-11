@@ -21,7 +21,7 @@ pub enum Statement {
     Let(LetStatement),
     If(IfStatement),
     While(WhileStatement),
-    Do(SubroutineCall), // TODO should just be a subroutine call
+    Do(SubroutineCall),
     Return(Expression),
 }
 
@@ -306,7 +306,6 @@ pub enum SubroutineType {
     Function,
     Method,
 }
-
 
 impl TryInto<SubroutineType> for Keyword {
     type Error = ParseError;
