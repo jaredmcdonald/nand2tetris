@@ -71,7 +71,7 @@ impl TryInto<UnaryOp> for Symbol {
         match self {
             Symbol::Minus => Ok(UnaryOp::Neg),
             Symbol::Not => Ok(UnaryOp::Not),
-            _ => Err(Self::Error { message: format!("unrecognized unary operation `{}`", self) }),
+            _ => Err(Self::Error::new(&format!("unrecognized unary operation `{}`", self))),
         }
     }
 }
@@ -152,7 +152,7 @@ impl TryInto<BinaryOp> for Symbol {
             Symbol::Lt => Ok(BinaryOp::Lt),
             Symbol::Gt => Ok(BinaryOp::Gt),
             Symbol::Eq => Ok(BinaryOp::Eq),
-            _ => Err(Self::Error { message: format!("unrecognized operation `{}`", self) }),
+            _ => Err(Self::Error::new(&format!("unrecognized operation `{}`", self))),
         }
     }
 }
@@ -320,7 +320,7 @@ impl TryInto<SubroutineType> for Keyword {
             Keyword::Method => Ok(SubroutineType::Method),
             Keyword::Function => Ok(SubroutineType::Function),
             Keyword::Constructor => Ok(SubroutineType::Constructor),
-            _ => Err(Self::Error { message: format!("expected `constructor`, `function` or `method`, got {:?}", self) }),
+            _ => Err(Self::Error::new(&format!("expected `constructor`, `function` or `method`, got {:?}", self))),
         }
     }
 }
@@ -559,7 +559,7 @@ impl TryInto<Type> for Token {
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
             Token::Keyword(Keyword::Boolean) => Ok(Type::Boolean),
             Token::Identifier(ref id) => Ok(Type::Class(id.to_string())),
-            _ => Err(ParseError::new(&format!("expected a type, got token {:?}", self))),
+            _ => Err(Self::Error::new(&format!("expected a type, got token {:?}", self))),
         }
     }
 }
