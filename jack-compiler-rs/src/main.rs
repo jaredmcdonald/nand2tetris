@@ -16,6 +16,7 @@ use parse::{parse, ParseError};
 
 #[derive(Debug)]
 enum CliError {
+    NoTargetSpecified,
     TokenError(TokenError),
     ParseError(ParseError),
     IoError(io::Error),
@@ -40,7 +41,7 @@ impl From<ParseError> for CliError {
 }
 
 fn read_file_to_string() -> Result<String, CliError> {
-    let target = args().nth(1).unwrap_or(".".to_string());
+    let target = args().nth(1).ok_or(CliError::NoTargetSpecified)?;
     let file = File::open(target)?;
     let mut buf_reader = BufReader::new(file);
     let mut contents = String::new();

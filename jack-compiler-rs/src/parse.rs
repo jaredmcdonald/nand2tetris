@@ -337,33 +337,6 @@ impl fmt::Display for SubroutineType {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum SubroutineReturnType {
-    Void,
-    Type(Type),
-}
-
-impl fmt::Display for SubroutineReturnType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            SubroutineReturnType::Void => write!(f, "<keyword>void</keyword>"),
-            SubroutineReturnType::Type(ref t) => write!(f, "{}", t),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Param {
-    param_type: Type,
-    name: String,
-}
-
-impl fmt::Display for Param {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}\n<identifier>{}</identifier>", self.param_type, self.name)
-    }
-}
-
-#[derive(Debug, PartialEq)]
 pub struct SubroutineBody {
     var_declarations: Vec<Var>,
     statements: Vec<Statement>,
@@ -399,8 +372,8 @@ impl fmt::Display for SubroutineBody {
 #[derive(Debug, PartialEq)]
 pub struct Subroutine {
     subroutine_type: SubroutineType,
-    return_type: SubroutineReturnType,
-    params: Vec<Param>,
+    return_type: Type,
+    params: Vec<Var>,
     name: String,
     body: SubroutineBody,
 }
@@ -431,30 +404,33 @@ impl fmt::Display for Subroutine {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ClassVarType {
+pub enum VarType {
     Field,
     Static,
+    Argument,
+    Local,
 }
 
-impl fmt::Display for ClassVarType {
+impl fmt::Display for VarType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<keyword>{}</keyword>", match *self {
-            ClassVarType::Field => "field",
-            ClassVarType::Static => "static",
-        })
+        match *self {
+            VarType::Field => write!(f, "<keyword>field</keyword>"),
+            VarType::Static => write!(f, "<keyword>static</keyword>"),
+            _ => write!(f, ""),
+        }
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ClassBodyItem {
-    ClassVar(ClassVar),
+    ClassVar(Var),
     Subroutine(Subroutine),
 }
 
 impl fmt::Display for ClassBodyItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ClassBodyItem::ClassVar(ref cv) => write!(f, "{}", cv),
+            ClassBodyItem::ClassVar(ref cv) => write!(f, "<classVarDec>\n{}\n<symbol>;</symbol>\n</classVarDec>", cv),
             ClassBodyItem::Subroutine(ref sr) => write!(f, "{}", sr),
         }
     }
@@ -462,6 +438,7 @@ impl fmt::Display for ClassBodyItem {
 
 #[derive(Debug, PartialEq)]
 pub enum Type {
+    Void,
     Int,
     Char,
     Boolean,
@@ -472,6 +449,7 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Type::*;
         match *self {
+            Void => write!(f, "<keyword>void</keyword>"),
             Int => write!(f, "<keyword>int</keyword>"),
             Char => write!(f, "<keyword>char</keyword>"),
             Boolean => write!(f, "<keyword>boolean</keyword>"),
@@ -481,37 +459,24 @@ impl fmt::Display for Type {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ClassVar {
-    var_type: ClassVarType,
-    var: Var,
-}
-
-impl fmt::Display for ClassVar {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-            "<classVarDec>
-                {}
-                {}
-                <symbol>;</symbol>
-            </classVarDec>",
-            self.var_type,
-            self.var
-        )
-    }
-}
-
-#[derive(Debug, PartialEq)]
 pub struct Var {
+    var_type: VarType,
     data_type: Type,
     names: Vec<String>, // can declare more than one at once, e.g. `static int x, y;`
 }
 
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let formatted_var_type = format!("{}", self.var_type);
         let names = self.names.iter().map(|n| format!("<identifier>{}</identifier>", n))
             .collect::<Vec<String>>()
             .join("\n<symbol>,</symbol>\n");
-        write!(f, "{}\n{}", self.data_type, names)
+        write!(f,
+            "{}{}\n{}",
+            if formatted_var_type == "" { "".to_owned() } else { format!("{}\n", formatted_var_type) },
+            self.data_type,
+            names
+        )
     }
 }
 
@@ -556,6 +521,7 @@ impl TryInto<Type> for Token {
 
     fn try_into(self) -> Result<Type, Self::Error> {
         match self {
+            Token::Keyword(Keyword::Void) => Ok(Type::Void),
             Token::Keyword(Keyword::Int) => Ok(Type::Int),
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
             Token::Keyword(Keyword::Boolean) => Ok(Type::Boolean),
@@ -577,20 +543,18 @@ fn parse_identifier(token: &Token) -> Result<String, ParseError> {
     }
 }
 
-fn parse_class_var(tokens: &[Token]) -> Result<ClassVar, ParseError> {
+fn parse_class_var(tokens: &[Token]) -> Result<Var, ParseError> {
     let mut tokens_iter = tokens.iter();
     let var_type = match tokens_iter.next() {
-        Some(&Token::Keyword(Keyword::Static)) => ClassVarType::Static,
-        Some(&Token::Keyword(Keyword::Field)) => ClassVarType::Field,
+        Some(&Token::Keyword(Keyword::Static)) => VarType::Static,
+        Some(&Token::Keyword(Keyword::Field)) => VarType::Field,
         _ => return Err(ParseError::new(&format!("unexpected token in class var declaration: {:?}", tokens))),
     };
 
-    let var = parse_var(&tokens_iter.map(|t| t.clone()).collect::<Vec<_>>())?;
-
-    Ok(ClassVar { var_type, var })
+    Ok(parse_var(&tokens_iter.map(|t| t.clone()).collect::<Vec<_>>(), var_type)?)
 }
 
-fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
+fn parse_params(tokens: &[Token]) -> Result<Vec<Var>, ParseError> {
     let mut params_list = vec![];
     let mut peekable = tokens.iter().peekable();
     let err_msg = format!("malformed param list: {:?}", tokens);
@@ -599,9 +563,9 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
         if first.is_none() {
             break;
         }
-        let param_type: Type = first.unwrap().clone().try_into()?;
+        let data_type: Type = first.unwrap().clone().try_into()?;
         let name = parse_identifier(peekable.next().ok_or(ParseError::new(&err_msg))?)?;
-        params_list.push(Param { param_type, name });
+        params_list.push(Var { data_type, names: vec![name], var_type: VarType::Argument });
         let next = peekable.next();
         if let Some(&Token::Symbol(ref s)) = next {
             if *s == Symbol::Comma {
@@ -616,7 +580,7 @@ fn parse_params(tokens: &[Token]) -> Result<Vec<Param>, ParseError> {
     Ok(params_list)
 }
 
-fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
+fn parse_var(tokens: &[Token], var_type: VarType) -> Result<Var, ParseError> {
     let err_msg = format!("malformed var declaration: {:?}", tokens);
     let mut peekable = tokens.iter().peekable();
     let data_type: Type = peekable.next().ok_or(ParseError::new(&err_msg))?.clone().try_into()?;
@@ -632,7 +596,7 @@ fn parse_var(tokens: &[Token]) -> Result<Var, ParseError> {
             &err_msg
         )?;
     }
-    Ok(Var { names, data_type })
+    Ok(Var { names, data_type, var_type })
 }
 
 fn parse_expression(tokens: &[Token]) -> Result<Expression, ParseError> {
@@ -890,7 +854,7 @@ fn parse_subroutine_body(tokens: &[Token]) -> Result<SubroutineBody, ParseError>
             let declaration_tokens = peekable.by_ref()
                 .take_while(|t| t != &&Token::Symbol(Symbol::Semi))
                 .map(|t| t.clone()).collect::<Vec<_>>();
-            var_declarations.push(parse_var(&declaration_tokens[1..])?);
+            var_declarations.push(parse_var(&declaration_tokens[1..], VarType::Local)?);
         } else {
             break;
         }
@@ -914,12 +878,7 @@ fn parse_subroutine(
         return Err(ParseError::new(&format!("expected keyword, got `{:?}`", subroutine_type_token)));
     };
 
-    let return_type = if return_type_token == &Token::Keyword(Keyword::Void) {
-        SubroutineReturnType::Void
-    } else {
-        SubroutineReturnType::Type(return_type_token.clone().try_into()?)
-    };
-
+    let return_type: Type = return_type_token.clone().try_into()?;
     let name = parse_identifier(name_token)?;
     let params = parse_params(params_body)?;
     let body = parse_subroutine_body(subroutine_body)?;
@@ -1101,12 +1060,10 @@ mod test {
             Token::Keyword(Keyword::Int),
             Token::Identifier("foo".to_string()),
         ];
-        assert_eq!(parse_class_var(&input).unwrap(), ClassVar {
-            var_type: ClassVarType::Static,
-            var: Var {
-                data_type: Type::Int,
-                names: vec!["foo".to_string()],
-            },
+        assert_eq!(parse_class_var(&input).unwrap(), Var {
+            var_type: VarType::Static,
+            data_type: Type::Int,
+            names: vec!["foo".to_string()],
         });
 
         let multiple_declarations = [
@@ -1116,12 +1073,10 @@ mod test {
             Token::Symbol(Symbol::Comma),
             Token::Identifier("bar".to_string()),
         ];
-        assert_eq!(parse_class_var(&multiple_declarations).unwrap(), ClassVar {
-            var_type: ClassVarType::Field,
-            var: Var {
-                data_type: Type::Class("MyCustomClass".to_string()),
-                names: vec!["foo".to_string(), "bar".to_string()],
-            },
+        assert_eq!(parse_class_var(&multiple_declarations).unwrap(), Var {
+            var_type: VarType::Field,
+            data_type: Type::Class("MyCustomClass".to_string()),
+            names: vec!["foo".to_string(), "bar".to_string()],
         });
     }
 
@@ -1186,7 +1141,7 @@ mod test {
         ];
         assert_eq!(
             parse_params(&one_param).unwrap(),
-            vec![Param { param_type: Type::Int, name: "x".to_string() }]
+            vec![Var { var_type: VarType::Argument, data_type: Type::Int, names: vec!["x".to_string()] }]
         );
 
         let three_params = [
@@ -1202,9 +1157,9 @@ mod test {
         assert_eq!(
             parse_params(&three_params).unwrap(),
             vec![
-                Param { param_type: Type::Int, name: "x".to_string() },
-                Param { param_type: Type::Class("Blargh".to_string()), name: "y1".to_string() },
-                Param { param_type: Type::Char, name: "y2".to_string() },
+                Var { var_type: VarType::Argument, data_type: Type::Int, names: vec!["x".to_string()] },
+                Var { var_type: VarType::Argument, data_type: Type::Class("Blargh".to_string()), names: vec!["y1".to_string()] },
+                Var { var_type: VarType::Argument, data_type: Type::Char, names: vec!["y2".to_string()] },
             ]
         );
 
