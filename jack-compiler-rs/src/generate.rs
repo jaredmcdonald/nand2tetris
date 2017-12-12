@@ -1,5 +1,5 @@
-use parse::{Class, ClassBodyItem, Subroutine};
-use symbols::{SymbolTable, SymbolError};
+use parse::{Class, ClassBodyItem, Subroutine, Statement, LetStatement};
+use symbols::{SymbolTable, LayeredSymbolTable, SymbolError};
 
 #[derive(Debug, PartialEq)]
 pub enum CodeGenError {
@@ -45,8 +45,43 @@ pub enum VmInstruction {
     Pop(MemorySegment, usize),
 }
 
-fn generate_subroutine(subroutine: &Subroutine, class_symbol_table: &SymbolTable) -> CodeGenResult {
+fn generate_let_statement(
+    statement: &LetStatement,
+    symbol_table: &LayeredSymbolTable
+) -> CodeGenResult {
+    // if statement.index_expression.is_some() { panic!("unimplemented") }
     Ok(vec![])
+}
+
+fn generate_statement(
+    statement: &Statement,
+    symbol_table: &LayeredSymbolTable
+) -> CodeGenResult {
+    match statement {
+        &Statement::Let(ref s) => generate_let_statement(s, symbol_table),
+        _ => Ok(vec![]),
+    }
+}
+
+fn generate_statements(
+    statements: &[Statement],
+    symbol_table: &LayeredSymbolTable
+) -> CodeGenResult {
+    let mut generated_statements = vec![];
+    for statement in statements {
+        generated_statements.extend(
+            generate_statement(&statement, symbol_table)?
+        );
+    }
+    Ok(generated_statements)
+}
+
+fn generate_subroutine(subroutine: &Subroutine, class_symbol_table: &SymbolTable) -> CodeGenResult {
+    let mut subroutine_symbol_table = SymbolTable::new();
+    subroutine_symbol_table.insert_many(&subroutine.params)?;
+    subroutine_symbol_table.insert_many(&subroutine.body.var_declarations)?;
+    let symbol_table = LayeredSymbolTable::new(class_symbol_table, &subroutine_symbol_table);
+    Ok(generate_statements(&subroutine.body.statements, &symbol_table)?)
 }
 
 pub fn generate(class: &Class) -> CodeGenResult {

@@ -17,8 +17,31 @@ pub struct SymbolTable {
     local_counter: usize,
 }
 
-impl SymbolTable {
+#[derive(Debug, PartialEq)]
+pub struct LayeredSymbolTable<'a> {
+    class_symbol_table: &'a SymbolTable,
+    subroutine_symbol_table: &'a SymbolTable,
+}
 
+impl <'a>LayeredSymbolTable<'a> {
+
+    pub fn new(
+        class_symbol_table: &'a SymbolTable,
+        subroutine_symbol_table: &'a SymbolTable
+    ) -> LayeredSymbolTable<'a> {
+        LayeredSymbolTable { class_symbol_table, subroutine_symbol_table }
+    }
+
+    pub fn get(&self, name: &str) -> Result<(VarType, usize), SymbolError> {
+        if let Ok(result) = self.subroutine_symbol_table.get(name) {
+            Ok(result)
+        } else {
+            Ok(self.class_symbol_table.get(name)?)
+        }
+    }
+}
+
+impl SymbolTable {
     pub fn new() -> SymbolTable {
         SymbolTable {
             table: HashMap::new(),
@@ -58,8 +81,9 @@ impl SymbolTable {
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> Result<(Var, usize), SymbolError> {
-        Ok(self.table.get(name).ok_or(SymbolError::NotFound)?.clone())
+    pub fn get(&self, name: &str) -> Result<(VarType, usize), SymbolError> {
+        let &(ref var, index) = self.table.get(name).ok_or(SymbolError::NotFound)?;
+        Ok((var.var_type, index))
     }
 }
 
@@ -117,7 +141,7 @@ mod test {
     }
 
     #[test]
-    fn test_get() {
+    fn test_get_method() {
         let mut st = SymbolTable::new();
         let var = Var {
             names: vec!["argh".to_owned(), "blargh".to_owned()],
@@ -125,9 +149,31 @@ mod test {
             var_type: VarType::Argument,
         };
         st.insert(&var).unwrap();
-        assert_eq!(st.get("argh").unwrap(), (var.clone(), 0));
-        assert_eq!(st.get("blargh").unwrap(), (var, 1));
+        assert_eq!(st.get("argh").unwrap(), (VarType::Argument, 0));
+        assert_eq!(st.get("blargh").unwrap(), (VarType::Argument, 1));
 
         assert_eq!(st.get("arghblargh"), Err(SymbolError::NotFound));
+    }
+
+    #[test]
+    fn test_layered_get() {
+        let mut t1 = SymbolTable::new();
+        t1.insert(&Var {
+            names: vec!["argh".to_owned(), "blargh".to_owned()],
+            data_type: Type::Class("MyClass".to_owned()),
+            var_type: VarType::Argument,
+        }).unwrap();
+        let mut t2 = SymbolTable::new();
+        t2.insert(&Var {
+            names: vec!["blargh1".to_owned()],
+            data_type: Type::Int,
+            var_type: VarType::Static,
+        }).unwrap();
+
+        let layered = LayeredSymbolTable::new(&t2, &t1);
+
+        assert_eq!(layered.get("blargh").unwrap(), (VarType::Argument, 1));
+        assert_eq!(layered.get("blargh1").unwrap(), (VarType::Static, 0));
+        assert_eq!(layered.get("blargh3"), Err(SymbolError::NotFound));
     }
 }

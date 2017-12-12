@@ -338,8 +338,8 @@ impl fmt::Display for SubroutineType {
 
 #[derive(Debug, PartialEq)]
 pub struct SubroutineBody {
-    var_declarations: Vec<Var>,
-    statements: Vec<Statement>,
+    pub var_declarations: Vec<Var>,
+    pub statements: Vec<Statement>,
 }
 
 impl fmt::Display for SubroutineBody {
@@ -371,11 +371,11 @@ impl fmt::Display for SubroutineBody {
 
 #[derive(Debug, PartialEq)]
 pub struct Subroutine {
-    subroutine_type: SubroutineType,
-    return_type: Type,
-    params: Vec<Var>,
-    name: String,
-    body: SubroutineBody,
+    pub subroutine_type: SubroutineType,
+    pub return_type: Type,
+    pub params: Vec<Var>,
+    pub name: String,
+    pub body: SubroutineBody,
 }
 
 impl fmt::Display for Subroutine {
