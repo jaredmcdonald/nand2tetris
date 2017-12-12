@@ -1,4 +1,4 @@
-use parse::{Class, ClassBodyItem, Subroutine, Statement, LetStatement};
+use ast::*;
 use symbols::{SymbolTable, LayeredSymbolTable, SymbolError};
 
 #[derive(Debug, PartialEq)]
@@ -43,13 +43,25 @@ type CodeGenResult = Result<Vec<VmInstruction>, CodeGenError>;
 pub enum VmInstruction {
     Push(MemorySegment, usize),
     Pop(MemorySegment, usize),
+    Goto(String),
+    IfGoto(String),
+    Label(String),
+    // Function, Call, blah blah blah
+}
+
+fn generate_expression(
+    expression: &Expression,
+    symbol_table: &LayeredSymbolTable
+) -> CodeGenResult {
+    Ok(vec![])
 }
 
 fn generate_let_statement(
     statement: &LetStatement,
     symbol_table: &LayeredSymbolTable
 ) -> CodeGenResult {
-    // if statement.index_expression.is_some() { panic!("unimplemented") }
+    let expr = generate_expression(&statement.expression, symbol_table);
+
     Ok(vec![])
 }
 
@@ -69,9 +81,7 @@ fn generate_statements(
 ) -> CodeGenResult {
     let mut generated_statements = vec![];
     for statement in statements {
-        generated_statements.extend(
-            generate_statement(&statement, symbol_table)?
-        );
+        generated_statements.extend(generate_statement(&statement, symbol_table)?);
     }
     Ok(generated_statements)
 }

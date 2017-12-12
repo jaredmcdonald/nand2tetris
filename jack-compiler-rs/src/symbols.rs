@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use parse::{Var, VarType};
+use ast::{Var, VarType};
 
 #[derive(Debug, PartialEq)]
 pub enum SymbolError {
@@ -90,7 +90,7 @@ impl SymbolTable {
 #[cfg(test)]
 mod test {
     use super::*;
-    use parse::Type;
+    use ast::Type;
 
     #[test]
     fn test_insert() {

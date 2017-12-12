@@ -5,6 +5,7 @@ extern crate regex;
 extern crate lazy_static;
 
 mod tokenize;
+mod ast;
 mod parse;
 mod symbols;
 mod generate;
@@ -14,7 +15,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, BufReader};
 use tokenize::{tokenize, TokenError};
-use parse::{parse, ParseError};
+use parse::parse;
+use ast::ParseError;
 use generate::{generate, CodeGenError};
 
 #[derive(Debug)]
