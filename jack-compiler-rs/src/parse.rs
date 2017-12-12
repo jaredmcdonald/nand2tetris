@@ -403,7 +403,7 @@ impl fmt::Display for Subroutine {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum VarType {
     Field,
     Static,
@@ -436,7 +436,7 @@ impl fmt::Display for ClassBodyItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Void,
     Int,
@@ -458,11 +458,11 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Var {
-    var_type: VarType,
-    data_type: Type,
-    names: Vec<String>, // can declare more than one at once, e.g. `static int x, y;`
+    pub var_type: VarType,
+    pub data_type: Type,
+    pub names: Vec<String>, // can declare more than one at once, e.g. `static int x, y;`
 }
 
 impl fmt::Display for Var {

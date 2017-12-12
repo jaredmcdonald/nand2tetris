@@ -6,6 +6,7 @@ extern crate lazy_static;
 
 mod tokenize;
 mod parse;
+mod symbols;
 
 use std::env::args;
 use std::fs::File;
