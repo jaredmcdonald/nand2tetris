@@ -7,6 +7,7 @@ extern crate lazy_static;
 mod tokenize;
 mod parse;
 mod symbols;
+mod generate;
 
 use std::env::args;
 use std::fs::File;
@@ -14,13 +15,15 @@ use std::io::prelude::*;
 use std::io::{self, BufReader};
 use tokenize::{tokenize, TokenError};
 use parse::{parse, ParseError};
+use generate::{generate, CodeGenError};
 
 #[derive(Debug)]
 enum CliError {
     NoTargetSpecified,
+    IoError(io::Error),
     TokenError(TokenError),
     ParseError(ParseError),
-    IoError(io::Error),
+    CodeGenError(CodeGenError),
 }
 
 impl From<io::Error> for CliError {
@@ -41,6 +44,12 @@ impl From<ParseError> for CliError {
     }
 }
 
+impl From<CodeGenError> for CliError {
+    fn from(error: CodeGenError) -> Self {
+        CliError::CodeGenError(error)
+    }
+}
+
 fn read_file_to_string() -> Result<String, CliError> {
     let target = args().nth(1).ok_or(CliError::NoTargetSpecified)?;
     let file = File::open(target)?;
@@ -50,16 +59,18 @@ fn read_file_to_string() -> Result<String, CliError> {
     Ok(contents)
 }
 
-fn tokenize_and_parse_file() -> Result<(), CliError> {
+fn compile() -> Result<(), CliError> {
     let contents = read_file_to_string()?;
     let tokens = tokenize(&contents)?;
     let parsed = parse(&tokens)?;
-    println!("{}", parsed);
+    for line in generate(&parsed)? {
+        println!("{:?}", line);
+    }
     Ok(())
 }
 
 fn main() {
-    match tokenize_and_parse_file() {
+    match compile() {
         Ok(_) => (),
         Err(e) => panic!("error!\n{:?}", e),
     }

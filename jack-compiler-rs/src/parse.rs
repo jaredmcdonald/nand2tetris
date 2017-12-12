@@ -482,8 +482,8 @@ impl fmt::Display for Var {
 
 #[derive(Debug, PartialEq)]
 pub struct Class {
-    name: String,
-    body: Vec<ClassBodyItem>,
+    pub name: String,
+    pub body: Vec<ClassBodyItem>,
 }
 
 impl fmt::Display for Class {

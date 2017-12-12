@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use parse::{Var, VarType, Type};
+use parse::{Var, VarType};
 
 #[derive(Debug, PartialEq)]
 pub enum SymbolError {
@@ -51,6 +51,13 @@ impl SymbolTable {
         Ok(())
     }
 
+    pub fn insert_many(&mut self, vars: &[Var]) -> Result<(), SymbolError> {
+        for var in vars.iter() {
+            self.insert(&var)?;
+        }
+        Ok(())
+    }
+
     pub fn get(&self, name: &str) -> Result<(Var, usize), SymbolError> {
         Ok(self.table.get(name).ok_or(SymbolError::NotFound)?.clone())
     }
@@ -59,6 +66,7 @@ impl SymbolTable {
 #[cfg(test)]
 mod test {
     use super::*;
+    use parse::Type;
 
     #[test]
     fn test_insert() {
@@ -75,6 +83,37 @@ mod test {
             data_type: Type::Class("MyClass".to_owned()),
             var_type: VarType::Field,
         }), Err(SymbolError::Occupied));
+    }
+
+    #[test]
+    fn test_insert_many() {
+        let mut st = SymbolTable::new();
+
+        assert!(st.insert_many(&[
+            Var {
+                names: vec!["blargh".to_owned()],
+                data_type: Type::Int,
+                var_type: VarType::Static,
+            },
+            Var {
+                names: vec!["argh".to_owned()],
+                data_type: Type::Int,
+                var_type: VarType::Field,
+            }
+        ]).is_ok());
+
+        assert_eq!(st.insert_many(&[
+            Var {
+                names: vec!["blargh1".to_owned()],
+                data_type: Type::Int,
+                var_type: VarType::Static,
+            },
+            Var {
+                names: vec!["argh".to_owned()],
+                data_type: Type::Int,
+                var_type: VarType::Field,
+            }
+        ]), Err(SymbolError::Occupied));
     }
 
     #[test]
