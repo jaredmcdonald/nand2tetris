@@ -109,7 +109,6 @@ fn generate_term(
         Term::Parenthetical(ref e) => generate_expression(e, symbol_table),
         _ => Ok(vec![])
     }
-
 }
 
 // infix:   a + b + c + d
@@ -141,11 +140,24 @@ fn generate_let_statement(
     statement: &LetStatement,
     symbol_table: &LayeredSymbolTable
 ) -> CodeGenResult {
-    let mut result = generate_expression(&statement.expression, symbol_table)?;
     let (target, index) = symbol_table.get(&statement.name)?;
-    result.push(VmInstruction::Pop(MemorySegment::from(target), index));
-    // TODO index expression
-    Ok(result)
+    let rhs_expression = generate_expression(&statement.expression, symbol_table)?;
+
+    if let Some(ref index_expr) = statement.index_expression {
+        let mut result = vec![VmInstruction::Push(MemorySegment::from(target), index)];
+        result.extend(generate_expression(index_expr, symbol_table)?);
+        result.push(VmInstruction::Add);
+        // pointer 1 now contains the address of a[b]
+        result.push(VmInstruction::Pop(MemorySegment::Pointer, 1)); // TODO is the index always 1? see p.229
+        result.extend(rhs_expression);
+        result.push(VmInstruction::Pop(MemorySegment::That, 0)); // TODO is the index always 0?
+        Ok(result)
+    } else {
+        let mut result = vec![];
+        result.extend(rhs_expression);
+        result.push(VmInstruction::Pop(MemorySegment::from(target), index));
+        Ok(result)
+    }
 }
 
 fn generate_if_statement(
@@ -176,6 +188,27 @@ fn generate_if_statement(
     Ok(result)
 }
 
+fn generate_while_statement(
+    statement: &WhileStatement,
+    symbol_table: &LayeredSymbolTable
+) -> CodeGenResult {
+    let unique = random::<u64>();
+    let begin_while_label = format!("beginwhile.{:x}", unique);
+    let end_while_label = format!("endwhile.{:x}", unique);
+    let mut result = vec![VmInstruction::Label(begin_while_label.to_owned())];
+    // evaluate condition
+    result.extend(generate_expression(&statement.condition, symbol_table)?);
+    // if condition is true, hop over everything
+    result.push(VmInstruction::IfGoto(end_while_label.to_owned()));
+    // statement body
+    result.extend(generate_statements(&statement.body, symbol_table)?);
+    // loop back to right above condition
+    result.push(VmInstruction::Goto(begin_while_label.to_owned()));
+    // end label
+    result.push(VmInstruction::Label(end_while_label.to_owned()));
+    Ok(result)
+}
+
 fn generate_statement(
     statement: &Statement,
     symbol_table: &LayeredSymbolTable
@@ -183,6 +216,7 @@ fn generate_statement(
     match *statement {
         Statement::Let(ref s) => generate_let_statement(s, symbol_table),
         Statement::If(ref s) => generate_if_statement(s, symbol_table),
+        Statement::While(ref s) => generate_while_statement(s, symbol_table),
         _ => Ok(vec![]),
     }
 }
@@ -203,6 +237,7 @@ fn generate_subroutine(subroutine: &Subroutine, class_symbol_table: &SymbolTable
     subroutine_symbol_table.insert_many(&subroutine.params)?;
     subroutine_symbol_table.insert_many(&subroutine.body.var_declarations)?;
     let symbol_table = LayeredSymbolTable::new(class_symbol_table, &subroutine_symbol_table);
+    // todo: insert function declaration, return void logic
     Ok(generate_statements(&subroutine.body.statements, &symbol_table)?)
 }
 
