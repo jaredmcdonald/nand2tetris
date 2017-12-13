@@ -1,8 +1,9 @@
 #![feature(try_from)]
 
-extern crate regex;
 #[macro_use]
 extern crate lazy_static;
+extern crate rand;
+extern crate regex;
 
 mod tokenize;
 mod ast;

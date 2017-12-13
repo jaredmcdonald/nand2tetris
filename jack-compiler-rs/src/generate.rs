@@ -1,3 +1,4 @@
+use rand::random;
 use ast::*;
 use symbols::*;
 
@@ -53,6 +54,15 @@ impl From<BinaryOp> for VmInstruction {
     }
 }
 
+impl From<UnaryOp> for VmInstruction {
+    fn from(value: UnaryOp) -> Self {
+        match value {
+            UnaryOp::Not => VmInstruction::Not,
+            UnaryOp::Neg => VmInstruction::Neg,
+        }
+    }
+}
+
 type CodeGenResult = Result<Vec<VmInstruction>, CodeGenError>;
 
 #[derive(Debug, PartialEq)]
@@ -71,6 +81,8 @@ pub enum VmInstruction {
     Lt,
     Gt,
     Eq,
+    Not,
+    Neg,
 }
 
 fn generate_term(
@@ -83,13 +95,19 @@ fn generate_term(
             let (target, index) = symbol_table.get(name)?;
             Ok(vec![VmInstruction::Push(MemorySegment::from(target), index)])
         },
+        Term::Unary(op, ref term) => {
+            // postfix: -3 -> 3 neg
+            let mut result = generate_term(term, symbol_table)?;
+            result.push(VmInstruction::from(op));
+            Ok(result)
+        },
         Term::Parenthetical(ref e) => generate_expression(e, symbol_table),
         _ => Ok(vec![])
     }
 
 }
 
-// infix:   ((a + b) + c) + d
+// infix:   a + b + c + d
 // postfix: a b + c + d +
 fn generate_expression(
     expression: &Expression,
@@ -103,7 +121,7 @@ fn generate_expression(
         return Err(CodeGenError::MalformedExpression);
     }
     while let Some(ExpressionItem::Operation(op)) = expression_iter.next() {
-        // term1 op term2 -> term1 term2 op
+        // postfix: op termN -> termN op
         if let Some(ExpressionItem::Term(term2)) = expression_iter.next() {
             result.extend(generate_term(&term2, symbol_table)?);
             result.push(VmInstruction::from(op));
@@ -121,6 +139,35 @@ fn generate_let_statement(
     let mut result = generate_expression(&statement.expression, symbol_table)?;
     let (target, index) = symbol_table.get(&statement.name)?;
     result.push(VmInstruction::Pop(MemorySegment::from(target), index));
+    // TODO index expression
+    Ok(result)
+}
+
+fn generate_if_statement(
+    statement: &IfStatement,
+    symbol_table: &LayeredSymbolTable
+) -> CodeGenResult {
+    let mut result = generate_expression(&statement.condition, symbol_table)?; // condition
+    let unique = random::<u64>();
+    let end_if_label = format!("endif.{:x}", unique);
+
+    result.push(VmInstruction::Not); // invert it because we're deciding whether to skip
+    result.push(VmInstruction::IfGoto(end_if_label.to_owned()));
+    result.extend(generate_statements(&statement.if_body, symbol_table)?);
+
+    if let Some(ref else_body) = statement.else_body {
+        let end_else_label = format!("endelse.{:x}", unique);
+        // if we're in the if condition, jump over the else body
+        result.push(VmInstruction::Goto(end_else_label.to_owned()));
+        // otherwise we will end up here, where we put the else statements
+        result.push(VmInstruction::Label(end_if_label.to_owned()));
+        result.extend(generate_statements(&else_body, symbol_table)?);
+        // here is where we will land if the if condition evaluated to true
+        result.push(VmInstruction::Label(end_else_label.to_owned()));
+    } else {
+        // if there's no else body, just need this label at the end
+        result.push(VmInstruction::Label(end_if_label.to_owned()));
+    }
     Ok(result)
 }
 
@@ -128,8 +175,9 @@ fn generate_statement(
     statement: &Statement,
     symbol_table: &LayeredSymbolTable
 ) -> CodeGenResult {
-    match statement {
-        &Statement::Let(ref s) => generate_let_statement(s, symbol_table),
+    match *statement {
+        Statement::Let(ref s) => generate_let_statement(s, symbol_table),
+        Statement::If(ref s) => generate_if_statement(s, symbol_table),
         _ => Ok(vec![]),
     }
 }
@@ -190,6 +238,11 @@ mod test {
         assert_eq!(
             generate_term(&Term::VarName("blargh".to_owned()), &symbol_table),
             Ok(vec![VmInstruction::Push(MemorySegment::Argument, 0)])
+        );
+
+        assert_eq!(
+            generate_term(&Term::Unary(UnaryOp::Not, Box::new(Term::IntegerConstant(2))), &symbol_table),
+            Ok(vec![VmInstruction::Push(MemorySegment::Constant, 2), VmInstruction::Not])
         );
 
         assert!(generate_term(&Term::VarName("argh".to_owned()), &symbol_table).is_err());
