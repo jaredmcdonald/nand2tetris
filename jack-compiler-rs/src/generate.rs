@@ -1,4 +1,5 @@
 use rand::random;
+use tokenize::Keyword;
 use ast::*;
 use symbols::*;
 
@@ -95,6 +96,10 @@ fn generate_term(
             let (target, index) = symbol_table.get(name)?;
             Ok(vec![VmInstruction::Push(MemorySegment::from(target), index)])
         },
+        Term::KeywordConstant(k) => Ok(match k {
+            Keyword::True => vec![VmInstruction::Push(MemorySegment::Constant, 1), VmInstruction::Neg],
+            _ => vec![VmInstruction::Push(MemorySegment::Constant, 0)] // null, false
+        }),
         Term::Unary(op, ref term) => {
             // postfix: -3 -> 3 neg
             let mut result = generate_term(term, symbol_table)?;
@@ -243,6 +248,19 @@ mod test {
         assert_eq!(
             generate_term(&Term::Unary(UnaryOp::Not, Box::new(Term::IntegerConstant(2))), &symbol_table),
             Ok(vec![VmInstruction::Push(MemorySegment::Constant, 2), VmInstruction::Not])
+        );
+
+        assert_eq!(
+            generate_term(&Term::KeywordConstant(Keyword::True), &symbol_table),
+            Ok(vec![
+                VmInstruction::Push(MemorySegment::Constant, 1),
+                VmInstruction::Neg
+            ])
+        );
+
+        assert_eq!(
+            generate_term(&Term::KeywordConstant(Keyword::False), &symbol_table),
+            Ok(vec![VmInstruction::Push(MemorySegment::Constant, 0)])
         );
 
         assert!(generate_term(&Term::VarName("argh".to_owned()), &symbol_table).is_err());
