@@ -5,7 +5,6 @@ use ast::{Var, VarType};
 #[derive(Debug, PartialEq)]
 pub enum SymbolError {
     Occupied,
-    NotFound
 }
 
 #[derive(Debug, PartialEq)]
@@ -32,12 +31,8 @@ impl <'a>LayeredSymbolTable<'a> {
         LayeredSymbolTable { class_symbol_table, subroutine_symbol_table }
     }
 
-    pub fn get(&self, name: &str) -> Result<(VarType, usize), SymbolError> {
-        if let Ok(result) = self.subroutine_symbol_table.get(name) {
-            Ok(result)
-        } else {
-            Ok(self.class_symbol_table.get(name)?)
-        }
+    pub fn get(&self, name: &str) -> Option<(VarType, usize)> {
+        self.subroutine_symbol_table.get(name).or(self.class_symbol_table.get(name))
     }
 }
 
@@ -81,9 +76,11 @@ impl SymbolTable {
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> Result<(VarType, usize), SymbolError> {
-        let &(ref var, index) = self.table.get(name).ok_or(SymbolError::NotFound)?;
-        Ok((var.var_type, index))
+    pub fn get(&self, name: &str) -> Option<(VarType, usize)> {
+        self.table.get(name).and_then(|result| {
+            let &(ref var, index) = result;
+            Some((var.var_type, index))
+        })
     }
 }
 
@@ -141,7 +138,7 @@ mod test {
     }
 
     #[test]
-    fn test_get_method() {
+    fn test_get() {
         let mut st = SymbolTable::new();
         let var = Var {
             names: vec!["argh".to_owned(), "blargh".to_owned()],
@@ -149,10 +146,9 @@ mod test {
             var_type: VarType::Argument,
         };
         st.insert(&var).unwrap();
-        assert_eq!(st.get("argh").unwrap(), (VarType::Argument, 0));
-        assert_eq!(st.get("blargh").unwrap(), (VarType::Argument, 1));
-
-        assert_eq!(st.get("arghblargh"), Err(SymbolError::NotFound));
+        assert_eq!(st.get("argh"), Some((VarType::Argument, 0)));
+        assert_eq!(st.get("blargh"), Some((VarType::Argument, 1)));
+        assert_eq!(st.get("arghblargh"), None);
     }
 
     #[test]
@@ -172,8 +168,8 @@ mod test {
 
         let layered = LayeredSymbolTable::new(&t2, &t1);
 
-        assert_eq!(layered.get("blargh").unwrap(), (VarType::Argument, 1));
-        assert_eq!(layered.get("blargh1").unwrap(), (VarType::Static, 0));
-        assert_eq!(layered.get("blargh3"), Err(SymbolError::NotFound));
+        assert_eq!(layered.get("blargh"), Some((VarType::Argument, 1)));
+        assert_eq!(layered.get("blargh1"), Some((VarType::Static, 0)));
+        assert_eq!(layered.get("blargh3"), None);
     }
 }
