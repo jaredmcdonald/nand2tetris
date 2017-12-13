@@ -192,6 +192,16 @@ impl fmt::Display for Term {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Expression(pub Vec<ExpressionItem>);
 
+// cf https://doc.rust-lang.org/std/iter/trait.IntoIterator.html#examples
+impl IntoIterator for Expression {
+    type Item = ExpressionItem;
+    type IntoIter = ::std::vec::IntoIter<ExpressionItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let content = self.0.iter().map(|t| format!("{}\n", t)).collect::<String>();
