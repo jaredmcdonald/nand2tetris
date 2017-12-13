@@ -102,7 +102,7 @@ fn generate_expression(
     } else {
         return Err(CodeGenError::MalformedExpression);
     }
-    if let Some(ExpressionItem::Operation(op)) = expression_iter.next() {
+    while let Some(ExpressionItem::Operation(op)) = expression_iter.next() {
         // term1 op term2 -> term1 term2 op
         if let Some(ExpressionItem::Term(term2)) = expression_iter.next() {
             result.extend(generate_term(&term2, symbol_table)?);
@@ -177,6 +177,25 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_generate_term() {
+        let st1 = SymbolTable::new();
+        let mut st2 = SymbolTable::new();
+        st2.insert(&Var {
+            names: vec!["blargh".to_owned()],
+            data_type: Type::Int,
+            var_type: VarType::Argument,
+        }).unwrap();
+        let symbol_table = LayeredSymbolTable::new(&st1, &st2);
+
+        assert_eq!(
+            generate_term(&Term::VarName("blargh".to_owned()), &symbol_table),
+            Ok(vec![VmInstruction::Push(MemorySegment::Argument, 0)])
+        );
+
+        assert!(generate_term(&Term::VarName("argh".to_owned()), &symbol_table).is_err());
+    }
+
+    #[test]
     fn test_generate_expression() {
         let st1 = SymbolTable::new();
         let st2 = SymbolTable::new();
@@ -192,6 +211,23 @@ mod test {
         assert_eq!(result.unwrap(), vec![
             VmInstruction::Push(MemorySegment::Constant, 2),
             VmInstruction::Push(MemorySegment::Constant, 3),
+            VmInstruction::Add,
+        ]);
+
+        let longer_expr = Expression(vec![
+            ExpressionItem::Term(Term::IntegerConstant(2)),
+            ExpressionItem::Operation(BinaryOp::Plus),
+            ExpressionItem::Term(Term::IntegerConstant(3)),
+            ExpressionItem::Operation(BinaryOp::Plus),
+            ExpressionItem::Term(Term::IntegerConstant(4)),
+        ]);
+        let longer_expr_result = generate_expression(&longer_expr, &empty_symbol_table);
+        assert!(longer_expr_result.is_ok());
+        assert_eq!(longer_expr_result.unwrap(), vec![
+            VmInstruction::Push(MemorySegment::Constant, 2),
+            VmInstruction::Push(MemorySegment::Constant, 3),
+            VmInstruction::Add,
+            VmInstruction::Push(MemorySegment::Constant, 4),
             VmInstruction::Add,
         ]);
     }
