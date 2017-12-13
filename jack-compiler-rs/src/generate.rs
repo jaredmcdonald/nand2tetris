@@ -15,6 +15,7 @@ pub enum CodeGenError {
     SymbolError(SymbolError),
     MalformedExpression,
     UnknownVarName,
+    UnknownSubroutineName,
 }
 
 impl From<SymbolError> for CodeGenError {
@@ -221,7 +222,39 @@ fn generate_subroutine_call(
     subroutine_call: &SubroutineCall,
     environment: &SubroutineEnvironment
 ) -> CodeGenResult {
-    Ok(vec![]) // TODO
+    let mut num_args = subroutine_call.parameters.len();
+    let mut result = vec![];
+    if let Some(ref parent_name) = subroutine_call.parent_name {
+        // this is some other object's function
+        if let Some((var_type, index)) = environment.symbol_table.get(parent_name) {
+            // method call, pass the var as the first arg
+            result.push(VmInstruction::Push(MemorySegment::from(var_type), index));
+            num_args += 1;
+        }
+    } else {
+        // the subroutine resides on this same class (I think?)
+        let is_method = *environment.class_subroutines
+            .get(&subroutine_call.subroutine_name)
+            .ok_or(CodeGenError::UnknownSubroutineName)? == SubroutineType::Method;
+        if is_method {
+            // TODO somehow `this` needs to be the first argument, how?
+            num_args += 1;
+        }
+    }
+
+    for param in &subroutine_call.parameters {
+        result.extend(generate_expression(&param, environment)?)
+    }
+
+    let name = format!("{}{}{}",
+        &subroutine_call.parent_name.as_ref().unwrap_or(&"".to_string()), // ehhhhh
+        if subroutine_call.parent_name.is_some() { "." } else { "" },
+        subroutine_call.subroutine_name
+    );
+
+    result.push(VmInstruction::Call(name, num_args));
+
+    Ok(result)
 }
 
 fn generate_do_statement(
