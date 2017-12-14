@@ -100,6 +100,7 @@ mod test {
         }).unwrap();
         let (_, index, _) = st.get("blargh").unwrap();
         assert_eq!(index, 1);
+        assert_eq!(st.argument_counter, 2);
     }
 
     #[test]
