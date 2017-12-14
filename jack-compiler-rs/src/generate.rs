@@ -283,7 +283,8 @@ fn generate_while_statement(
     let mut result = vec![VmInstruction::Label(begin_while_label.to_owned())];
     // evaluate condition
     result.extend(generate_expression(&statement.condition, environment)?);
-    // if condition is true, hop over everything
+    // if condition is false, hop over everything
+    result.push(VmInstruction::Not);
     result.push(VmInstruction::IfGoto(end_while_label.to_owned()));
     // statement body
     result.extend(generate_statements(&statement.body, environment)?);
