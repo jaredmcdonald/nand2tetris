@@ -1,4 +1,3 @@
-use std::fmt;
 use std::num::ParseIntError;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -69,13 +68,6 @@ impl TryInto<Keyword> for String {
     }
 }
 
-
-impl fmt::Display for Keyword {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", KEYWORD_TO_STRING.get(self).unwrap())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub struct SymbolError {
     message: String,
@@ -90,12 +82,6 @@ impl TryInto<Symbol> for String {
         } else {
             Err(Self::Error { message: format!("unrecognized symbol `{}`", self) })
         }
-    }
-}
-
-impl fmt::Display for Symbol {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", SYMBOL_TO_STRING.get(self).unwrap())
     }
 }
 
@@ -117,26 +103,10 @@ lazy_static! {
         map
     };
 
-    static ref KEYWORD_TO_STRING: HashMap<Keyword, String> = {
-        let mut map = HashMap::new();
-        for &(s, k) in get_keyword_pairs().iter() {
-            map.insert(k, s.to_string());
-        }
-        map
-    };
-
     static ref STRING_TO_SYMBOL: HashMap<String, Symbol> = {
         let mut map = HashMap::new();
         for &(string, sym) in get_symbol_pairs().iter() {
             map.insert(string.to_string(), sym);
-        }
-        map
-    };
-
-    static ref SYMBOL_TO_STRING: HashMap<Symbol, String> = {
-        let mut map = HashMap::new();
-        for &(string, sym) in get_symbol_pairs().iter() {
-            map.insert(sym, string.to_string());
         }
         map
     };
@@ -192,31 +162,6 @@ fn get_keyword_pairs() -> [(&'static str, Keyword); 21] {
     ]
 }
 
-// XML formatting for the book's tokenization test cases
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (label, value) = match self {
-            &Token::Keyword(ref v) => ("keyword", v.to_string()),
-            &Token::Symbol(ref v) => ("symbol", {
-                // need to escape some symbols for xml 🙄
-                if v == &Symbol::Lt {
-                    "&lt;".to_string()
-                } else if v == &Symbol::Gt {
-                    "&gt;".to_string()
-                } else if v == &Symbol::Amp {
-                    "&amp;".to_string()
-                } else {
-                    v.to_string()
-                }
-            }),
-            &Token::Identifier(ref v) => ("identifier", v.to_string()),
-            &Token::StringConstant(ref v) => ("stringConstant", v.to_string()),
-            &Token::IntegerConstant(ref v) => ("integerConstant", format!("{}", v)),
-        };
-        write!(f, "<{0}>{1}</{0}>", label, value)
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub enum TokenError {
     SymbolError(SymbolError),
@@ -226,7 +171,7 @@ pub enum TokenError {
     IntTooBigError(u16),
     RegexError(regex::Error),
     ParseIntError(ParseIntError),
-    Unknown,
+    UnknownToken,
 }
 
 impl From<regex::Error> for TokenError {
@@ -308,7 +253,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
         } else if let Some(mat) = capture.name("unknown") {
             Err(TokenError::InvalidTokenError(mat.as_str().to_string()))
         } else {
-            Err(TokenError::Unknown)
+            Err(TokenError::UnknownToken)
         }
     }).collect::<Result<Vec<Token>, TokenError>>()?;
 
@@ -377,10 +322,11 @@ mod test {
 
     #[test]
     fn test_identifier_containing_keyword() {
-        let tokenized = tokenize("return double");
+        let tokenized = tokenize("return double;");
         assert_eq!(tokenized, Ok(vec![
             Token::Keyword(Keyword::Return),
-            Token::Identifier("double".to_owned())
+            Token::Identifier("double".to_owned()),
+            Token::Symbol(Symbol::Semi)
         ]));
     }
 }
