@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use ast::{Var, VarType};
+use ast::{Var, VarType, Type};
 
 #[derive(Debug, PartialEq)]
 pub enum SymbolError {
@@ -31,7 +31,7 @@ impl <'a>LayeredSymbolTable<'a> {
         LayeredSymbolTable { class_symbol_table, subroutine_symbol_table }
     }
 
-    pub fn get(&self, name: &str) -> Option<(VarType, usize)> {
+    pub fn get(&self, name: &str) -> Option<(VarType, usize, Type)> {
         self.subroutine_symbol_table.get(name).or(self.class_symbol_table.get(name))
     }
 }
@@ -76,10 +76,10 @@ impl SymbolTable {
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> Option<(VarType, usize)> {
+    pub fn get(&self, name: &str) -> Option<(VarType, usize, Type)> {
         self.table.get(name).and_then(|result| {
             let &(ref var, index) = result;
-            Some((var.var_type, index))
+            Some((var.var_type, index, var.data_type.clone()))
         })
     }
 }
@@ -146,8 +146,8 @@ mod test {
             var_type: VarType::Argument,
         };
         st.insert(&var).unwrap();
-        assert_eq!(st.get("argh"), Some((VarType::Argument, 0)));
-        assert_eq!(st.get("blargh"), Some((VarType::Argument, 1)));
+        assert_eq!(st.get("argh"), Some((VarType::Argument, 0, Type::Class("MyClass".to_owned()))));
+        assert_eq!(st.get("blargh"), Some((VarType::Argument, 1, Type::Class("MyClass".to_owned()))));
         assert_eq!(st.get("arghblargh"), None);
     }
 
@@ -168,8 +168,8 @@ mod test {
 
         let layered = LayeredSymbolTable::new(&t2, &t1);
 
-        assert_eq!(layered.get("blargh"), Some((VarType::Argument, 1)));
-        assert_eq!(layered.get("blargh1"), Some((VarType::Static, 0)));
+        assert_eq!(layered.get("blargh"), Some((VarType::Argument, 1, Type::Class("MyClass".to_owned()))));
+        assert_eq!(layered.get("blargh1"), Some((VarType::Static, 0, Type::Int)));
         assert_eq!(layered.get("blargh3"), None);
     }
 }

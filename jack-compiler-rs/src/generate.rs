@@ -8,6 +8,7 @@ use symbols::*;
 pub struct SubroutineEnvironment<'a> {
     symbol_table: LayeredSymbolTable<'a>,
     class_subroutines: &'a HashMap<String, SubroutineType>,
+    current_classname: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -16,6 +17,7 @@ pub enum CodeGenError {
     MalformedExpression,
     UnknownVarName,
     UnknownSubroutineName,
+    MethodCallOnPrimitive,
 }
 
 impl From<SymbolError> for CodeGenError {
@@ -102,7 +104,7 @@ fn generate_term(
     match *term {
         Term::IntegerConstant(i) => Ok(vec![VmInstruction::Push(MemorySegment::Constant, i as usize)]),
         Term::VarName(ref name) => {
-            let (target, index) = environment.symbol_table.get(name).ok_or(CodeGenError::UnknownVarName)?;
+            let (target, index, _) = environment.symbol_table.get(name).ok_or(CodeGenError::UnknownVarName)?;
             Ok(vec![VmInstruction::Push(MemorySegment::from(target), index)])
         },
         Term::KeywordConstant(k) => Ok(match k {
@@ -149,7 +151,7 @@ fn generate_let_statement(
     statement: &LetStatement,
     environment: &SubroutineEnvironment
 ) -> CodeGenResult {
-    let (target, index) = environment.symbol_table.get(&statement.name).ok_or(CodeGenError::UnknownVarName)?;
+    let (target, index, _) = environment.symbol_table.get(&statement.name).ok_or(CodeGenError::UnknownVarName)?;
     let rhs_expression = generate_expression(&statement.expression, environment)?;
 
     if let Some(ref index_expr) = statement.index_expression {
@@ -224,12 +226,21 @@ fn generate_subroutine_call(
 ) -> CodeGenResult {
     let mut num_args = subroutine_call.parameters.len();
     let mut result = vec![];
-    if let Some(ref parent_name) = subroutine_call.parent_name {
+    let mut parent_name = String::new();
+    if let Some(ref parent) = subroutine_call.parent_name {
         // this is some other object's function
-        if let Some((var_type, index)) = environment.symbol_table.get(parent_name) {
+        if let Some((var_type, index, data_type)) = environment.symbol_table.get(parent) {
             // method call, pass the var as the first arg
             result.push(VmInstruction::Push(MemorySegment::from(var_type), index));
             num_args += 1;
+            // the parent name for the function will be the parent classname
+            if let Type::Class(ref classname) = data_type {
+                parent_name.push_str(classname);
+            } else {
+                return Err(CodeGenError::MethodCallOnPrimitive);
+            }
+        } else {
+            parent_name.push_str(parent);
         }
     } else {
         // the subroutine resides on this same class (I think?)
@@ -240,15 +251,15 @@ fn generate_subroutine_call(
             // TODO somehow `this` needs to be the first argument, how?
             num_args += 1;
         }
+        parent_name.push_str(&environment.current_classname);
     }
 
     for param in &subroutine_call.parameters {
         result.extend(generate_expression(&param, environment)?)
     }
 
-    let name = format!("{}{}{}",
-        &subroutine_call.parent_name.as_ref().unwrap_or(&"".to_string()), // ehhhhh
-        if subroutine_call.parent_name.is_some() { "." } else { "" },
+    let name = format!("{}.{}",
+        parent_name,
         subroutine_call.subroutine_name
     );
 
@@ -292,6 +303,7 @@ fn generate_statements(
 
 fn generate_subroutine(
     subroutine: &Subroutine,
+    classname: &str,
     class_symbol_table: &SymbolTable,
     class_subroutines: &HashMap<String, SubroutineType>
 ) -> CodeGenResult {
@@ -299,9 +311,17 @@ fn generate_subroutine(
     subroutine_symbol_table.insert_many(&subroutine.params)?;
     subroutine_symbol_table.insert_many(&subroutine.body.var_declarations)?;
     let symbol_table = LayeredSymbolTable::new(class_symbol_table, &subroutine_symbol_table);
-    let environment = SubroutineEnvironment { symbol_table, class_subroutines };
+    let environment = SubroutineEnvironment {
+        symbol_table,
+        class_subroutines,
+        current_classname: classname.to_owned(),
+    };
     // todo: insert function declaration, return void logic
-    Ok(generate_statements(&subroutine.body.statements, &environment)?)
+    let local_count = subroutine.body.var_declarations.iter().fold(0, |sum, val| sum + val.names.len());
+    let function_name = format!("{}.{}", classname, &subroutine.name);
+    let mut result = vec![VmInstruction::Function(function_name, local_count)];
+    result.extend(generate_statements(&subroutine.body.statements, &environment)?);
+    Ok(result)
 }
 
 fn get_subroutine_map(subroutines: &[&ClassBodyItem]) -> HashMap<String, SubroutineType> {
@@ -328,7 +348,7 @@ pub fn generate(class: &Class) -> CodeGenResult {
     let class_subroutines = get_subroutine_map(subroutines.as_slice());
     let mut subroutines_iter = subroutines.iter();
     while let Some(&&ClassBodyItem::Subroutine(ref subroutine)) = subroutines_iter.next() {
-        generated.extend(generate_subroutine(subroutine, &class_symbol_table, &class_subroutines)?)
+        generated.extend(generate_subroutine(subroutine, &class.name, &class_symbol_table, &class_subroutines)?)
     }
     Ok(generated)
 }
@@ -353,7 +373,11 @@ mod test {
         class_subroutines.insert("someClassMethod".to_owned(), SubroutineType::Method);
         class_subroutines.insert("someClassFunction".to_owned(), SubroutineType::Function);
         class_subroutines.insert("new".to_owned(), SubroutineType::Constructor);
-        let environment = SubroutineEnvironment { symbol_table, class_subroutines: &class_subroutines };
+        let environment = SubroutineEnvironment {
+            symbol_table,
+            class_subroutines: &class_subroutines,
+            current_classname: "MyClass".to_owned(),
+        };
 
         let result = panic::catch_unwind(|| {
             test(&environment)

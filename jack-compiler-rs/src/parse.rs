@@ -19,8 +19,6 @@ macro_rules! balanced {
     )
 }
 
-
-
 fn expect(cond: bool, msg: &str) -> Result<(), ParseError> {
     if !cond { Err(ParseError::new(msg)) } else { Ok(()) }
 }
