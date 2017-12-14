@@ -86,6 +86,7 @@ pub enum VmInstruction {
     Label(String),              // label (duh)
     Function(String, usize),    // name, local_count
     Call(String, usize),        // name, num_args
+    Return,
     Add,
     Sub,
     And,
@@ -154,7 +155,7 @@ fn generate_expression(
     if let Some(ExpressionItem::Term(term1)) = expression_iter.next() {
         result.extend(generate_term(&term1, environment)?);
     } else {
-        return Err(CodeGenError::MalformedExpression);
+        return Ok(result); // empty expression, can happen e.g. in return statements
     }
     while let Some(ExpressionItem::Operation(op)) = expression_iter.next() {
         // postfix: op termN -> termN op
@@ -276,7 +277,6 @@ fn generate_subroutine_call(
     }
 
     let name = format!("{}.{}", parent_name, subroutine_call.subroutine_name);
-
     result.push(VmInstruction::Call(name, num_args));
 
     Ok(result)
@@ -291,16 +291,29 @@ fn generate_do_statement(
     Ok(result)
 }
 
+fn generate_return_statement(
+    expression: &Expression,
+    environment: &SubroutineEnvironment
+) -> CodeGenResult {
+    let mut result = if expression.len() == 0 {
+        vec![VmInstruction::Push(MemorySegment::Constant, 0)] // void, per spec we return constant 0
+    } else {
+        generate_expression(expression, environment)?
+    };
+    result.push(VmInstruction::Return);
+    Ok(result)
+}
+
 fn generate_statement(
     statement: &Statement,
     environment: &SubroutineEnvironment
 ) -> CodeGenResult {
     match *statement {
-        Statement::Let(ref s) => generate_let_statement(s, environment),
-        Statement::If(ref s) => generate_if_statement(s, environment),
-        Statement::While(ref s) => generate_while_statement(s, environment),
-        Statement::Do(ref subr_call) => generate_do_statement(subr_call, environment),
-        _ => Ok(vec![]),
+        Statement::Let(ref statement) => generate_let_statement(statement, environment),
+        Statement::If(ref statement) => generate_if_statement(statement, environment),
+        Statement::While(ref statement) => generate_while_statement(statement, environment),
+        Statement::Do(ref subroutine_call) => generate_do_statement(subroutine_call, environment),
+        Statement::Return(ref expression) => generate_return_statement(expression, environment),
     }
 }
 

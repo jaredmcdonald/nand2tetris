@@ -202,6 +202,12 @@ impl IntoIterator for Expression {
     }
 }
 
+impl Expression {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let content = self.0.iter().map(|t| format!("{}\n", t)).collect::<String>();
