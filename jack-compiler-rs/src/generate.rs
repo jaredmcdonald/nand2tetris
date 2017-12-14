@@ -320,7 +320,6 @@ fn generate_subroutine_call(
             .get(&subroutine_call.subroutine_name)
             .ok_or(CodeGenError::UnknownSubroutineName)? == SubroutineType::Method;
         if is_method {
-            // TODO somehow `this` needs to be the first argument, how? is this (ha) right?
             result.push(VmInstruction::Push(MemorySegment::Pointer, 0));
             num_args += 1;
         }
@@ -434,7 +433,7 @@ pub fn generate(class: &Class) -> CodeGenResult {
         if let ClassBodyItem::ClassVar(_) = **i { true } else { false }
     });
     let mut field_count = 0;
-    // TODO can i just partition into iterators instead of the intermediate vecs?
+    // can i just partition into iterators instead of the intermediate vecs?
     let mut class_vars_iter = class_vars.iter();
     while let Some(&&ClassBodyItem::ClassVar(ref var)) = class_vars_iter.next() {
         class_symbol_table.insert(&var)?;

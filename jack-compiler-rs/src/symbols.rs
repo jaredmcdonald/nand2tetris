@@ -55,7 +55,7 @@ impl SymbolTable {
                     VarType::Field => self.field_counter,
                     VarType::Argument => self.argument_counter,
                     VarType::Local => self.local_counter,
-                })); // TODO can i dedupe these 👆 👇 somehow?
+                })); // can i dedupe these 👆 👇 somehow?
                 match var.var_type {
                     VarType::Static => self.static_counter += 1,
                     VarType::Field => self.field_counter += 1,
