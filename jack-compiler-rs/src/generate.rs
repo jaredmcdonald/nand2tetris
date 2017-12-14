@@ -323,7 +323,7 @@ fn generate_subroutine_call(
             .ok_or(CodeGenError::UnknownSubroutineName)? == SubroutineType::Method;
         if is_method {
             // TODO somehow `this` needs to be the first argument, how? is this (ha) right?
-            result.push(VmInstruction::Push(MemorySegment::This, 0));
+            result.push(VmInstruction::Push(MemorySegment::Pointer, 0));
             num_args += 1;
         }
         parent_name.push_str(&environment.current_classname);
@@ -392,7 +392,8 @@ fn generate_subroutine(
     class_symbol_table: &SymbolTable,
     class_subroutines: &HashMap<String, SubroutineType>
 ) -> CodeGenResult {
-    let mut subroutine_symbol_table = SymbolTable::new();
+    let initial_argument_count = if subroutine.subroutine_type == SubroutineType::Method { 1 } else { 0 };
+    let mut subroutine_symbol_table = SymbolTable::new(initial_argument_count);
     subroutine_symbol_table.insert_many(&subroutine.params)?;
     subroutine_symbol_table.insert_many(&subroutine.body.var_declarations)?;
     let symbol_table = LayeredSymbolTable::new(class_symbol_table, &subroutine_symbol_table);
@@ -405,10 +406,14 @@ fn generate_subroutine(
     let function_name = format!("{}.{}", classname, &subroutine.name);
     let mut result = vec![VmInstruction::Function(function_name, local_count)];
 
-    // allocate space for fields in constructor
     if subroutine.subroutine_type == SubroutineType::Constructor {
+        // allocate space for fields in constructor
         result.push(VmInstruction::Push(MemorySegment::Constant, field_count));
         result.push(VmInstruction::Call("Memory.alloc".to_owned(), 1));
+        result.push(VmInstruction::Pop(MemorySegment::Pointer, 0));
+    } else if subroutine.subroutine_type == SubroutineType::Method {
+        // set the `this` segment correctly for methods (recieved as argument 0)
+        result.push(VmInstruction::Push(MemorySegment::Argument, 0));
         result.push(VmInstruction::Pop(MemorySegment::Pointer, 0));
     }
 
@@ -426,7 +431,7 @@ fn get_subroutine_map(subroutines: &[&ClassBodyItem]) -> HashMap<String, Subrout
 }
 
 pub fn generate(class: &Class) -> CodeGenResult {
-    let mut class_symbol_table = SymbolTable::new();
+    let mut class_symbol_table = SymbolTable::new(0);
     let (class_vars, subroutines): (Vec<_>, Vec<_>) = class.body.iter().partition(|i| {
         if let ClassBodyItem::ClassVar(_) = **i { true } else { false }
     });
@@ -455,10 +460,11 @@ mod test {
     use super::*;
 
     // credit to https://medium.com/@ericdreichert/test-setup-and-teardown-in-rust-without-a-framework-ba32d97aa5ab
-    fn run_test_with_environment<T>(test: T) -> () where T: FnOnce(&SubroutineEnvironment) -> () + panic::UnwindSafe {
+    fn run_test_with_environment<T>(initial_argument_count: usize, test: T) ->
+            () where T: FnOnce(&SubroutineEnvironment) -> () + panic::UnwindSafe {
         // setup
-        let st1 = SymbolTable::new();
-        let mut st2 = SymbolTable::new();
+        let st1 = SymbolTable::new(0);
+        let mut st2 = SymbolTable::new(initial_argument_count);
         st2.insert(&Var {
             names: vec!["blargh".to_owned()],
             data_type: Type::Int,
@@ -489,7 +495,7 @@ mod test {
 
     #[test]
     fn test_generate_term() {
-        run_test_with_environment(|environment| {
+        run_test_with_environment(0, |environment| {
             assert_eq!(
                 generate_term(&Term::VarName("blargh".to_owned()), environment),
                 Ok(vec![VmInstruction::Push(MemorySegment::Argument, 0)])
@@ -519,7 +525,7 @@ mod test {
 
     #[test]
     fn test_generate_expression() {
-        run_test_with_environment(|environment| {
+        run_test_with_environment(0, |environment| {
             let expr = Expression(vec![
                 ExpressionItem::Term(Term::IntegerConstant(2)),
                 ExpressionItem::Operation(BinaryOp::Plus),
@@ -554,7 +560,7 @@ mod test {
 
     #[test]
     fn test_generate_parenthetical_expr() {
-        run_test_with_environment(|environment| {
+        run_test_with_environment(0, |environment| {
 
             let expr = Expression(vec![
                 // 2 * (3 + 4)
@@ -583,7 +589,7 @@ mod test {
 
     #[test]
     fn test_generate_subroutine_call() {
-        run_test_with_environment(|environment| {
+        run_test_with_environment(0, |environment| {
             assert_eq!(generate_subroutine_call(&SubroutineCall {
                 parent_name: Some("someLocalVariable".to_owned()),
                 subroutine_name: "someMethod".to_owned(),
@@ -599,7 +605,7 @@ mod test {
                 subroutine_name: "someClassMethod".to_owned(),
                 parameters: vec![Expression(vec![ExpressionItem::Term(Term::IntegerConstant(1))])],
             }, environment), Ok(vec![
-                VmInstruction::Push(MemorySegment::This, 0),
+                VmInstruction::Push(MemorySegment::Pointer, 0),
                 VmInstruction::Push(MemorySegment::Constant, 1),
                 VmInstruction::Call("MyClass.someClassMethod".to_owned(), 2)
             ]));

@@ -37,12 +37,12 @@ impl <'a>LayeredSymbolTable<'a> {
 }
 
 impl SymbolTable {
-    pub fn new() -> SymbolTable {
+    pub fn new(initial_argument_counter: usize) -> SymbolTable {
         SymbolTable {
             table: HashMap::new(),
             static_counter: 0,
             field_counter: 0,
-            argument_counter: 0,
+            argument_counter: initial_argument_counter,
             local_counter: 0,
         }
     }
@@ -90,8 +90,21 @@ mod test {
     use ast::Type;
 
     #[test]
+    fn test_constructor() {
+        let mut st = SymbolTable::new(1);
+        assert_eq!(st.argument_counter, 1);
+        st.insert(&Var {
+            names: vec!["blargh".to_owned()],
+            data_type: Type::Int,
+            var_type: VarType::Argument,
+        }).unwrap();
+        let (_, index, _) = st.get("blargh").unwrap();
+        assert_eq!(index, 1);
+    }
+
+    #[test]
     fn test_insert() {
-        let mut st = SymbolTable::new();
+        let mut st = SymbolTable::new(0);
 
         assert!(st.insert(&Var {
             names: vec!["blargh".to_owned()],
@@ -108,7 +121,7 @@ mod test {
 
     #[test]
     fn test_insert_many() {
-        let mut st = SymbolTable::new();
+        let mut st = SymbolTable::new(0);
 
         assert!(st.insert_many(&[
             Var {
@@ -139,7 +152,7 @@ mod test {
 
     #[test]
     fn test_get() {
-        let mut st = SymbolTable::new();
+        let mut st = SymbolTable::new(0);
         let var = Var {
             names: vec!["argh".to_owned(), "blargh".to_owned()],
             data_type: Type::Class("MyClass".to_owned()),
@@ -153,13 +166,13 @@ mod test {
 
     #[test]
     fn test_layered_get() {
-        let mut t1 = SymbolTable::new();
+        let mut t1 = SymbolTable::new(0);
         t1.insert(&Var {
             names: vec!["argh".to_owned(), "blargh".to_owned()],
             data_type: Type::Class("MyClass".to_owned()),
             var_type: VarType::Argument,
         }).unwrap();
-        let mut t2 = SymbolTable::new();
+        let mut t2 = SymbolTable::new(0);
         t2.insert(&Var {
             names: vec!["blargh1".to_owned()],
             data_type: Type::Int,
