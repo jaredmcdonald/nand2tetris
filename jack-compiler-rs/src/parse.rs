@@ -222,7 +222,7 @@ fn parse_expression_inner(tokens: &[Token]) -> Result<Vec<ExpressionItem>, Parse
         if let &Token::Symbol(sym) = op_token.unwrap() {
             expressions.push(ExpressionItem::Operation(sym.try_into()?));
         } else {
-            return Err(ParseError::new("expected an operation"));
+            return Err(ParseError::new(&format!("expected an operation, got token {:?}", op_token)));
         }
     }
     expect(peekable.peek().is_some(), "trailing operation in expression, expected a term")?;

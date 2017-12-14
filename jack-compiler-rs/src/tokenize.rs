@@ -275,8 +275,8 @@ fn strip_comments(input: &str) -> Result<String, regex::Error> {
 
 pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenError> {
     let tokenize_regex = Regex::new("(?x) # <-- ignore whitespace and comments (beginning w/ '#')
-        (?P<keyword>class|constructor|function|method|field|static|var|int|char|boolean|void|true|
-                    false|null|this|let|do|if|else|while|return)|
+        \\b(?P<keyword>class|constructor|function|method|field|static|var|int|char|boolean|void|true|
+                    false|null|this|let|do|if|else|while|return)\\b|
         (?P<symbol>[\\{\\}}\\(\\)\\[\\]\\.,;\\+\\-\\*/&\\|<>=~])|
         \"(?P<string>[^\"]*)\"|
         (?P<identifier>[[:alpha:]_]{1}[[:alnum:]_]*)|
@@ -373,5 +373,14 @@ mod test {
         let tokenized = tokenize("/**\n* hi */class Foo { // a class
             function void blargh1() { /* yeah \"lol\" */ return \"blargh\"; }}").unwrap();
         assert_eq!(tokenized.len(), 14);
+    }
+
+    #[test]
+    fn test_identifier_containing_keyword() {
+        let tokenized = tokenize("return double");
+        assert_eq!(tokenized, Ok(vec![
+            Token::Keyword(Keyword::Return),
+            Token::Identifier("double".to_owned())
+        ]));
     }
 }
