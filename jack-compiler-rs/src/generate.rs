@@ -455,6 +455,8 @@ pub fn generate(class: &Class) -> CodeGenResult {
 mod test {
     use std::panic;
     use super::*;
+    use super::VmInstruction::*;
+    use super::MemorySegment::*;
 
     // credit to https://medium.com/@ericdreichert/test-setup-and-teardown-in-rust-without-a-framework-ba32d97aa5ab
     fn run_test_with_environment<T>(initial_argument_count: usize, test: T) ->
@@ -470,6 +472,11 @@ mod test {
         st2.insert(&Var {
             names: vec!["someLocalVariable".to_owned()],
             data_type: Type::Class("SomeOtherClass".to_owned()),
+            var_type: VarType::Local,
+        }).unwrap();
+        st2.insert(&Var {
+            names: vec!["anArray".to_owned()],
+            data_type: Type::Class("Array".to_owned()),
             var_type: VarType::Local,
         }).unwrap();
         let symbol_table = LayeredSymbolTable::new(&st1, &st2);
@@ -495,25 +502,25 @@ mod test {
         run_test_with_environment(0, |environment| {
             assert_eq!(
                 generate_term(&Term::VarName("blargh".to_owned()), environment),
-                Ok(vec![VmInstruction::Push(MemorySegment::Argument, 0)])
+                Ok(vec![Push(Argument, 0)])
             );
 
             assert_eq!(
                 generate_term(&Term::Unary(UnaryOp::Not, Box::new(Term::IntegerConstant(2))), environment),
-                Ok(vec![VmInstruction::Push(MemorySegment::Constant, 2), VmInstruction::Not])
+                Ok(vec![Push(Constant, 2), Not])
             );
 
             assert_eq!(
                 generate_term(&Term::KeywordConstant(Keyword::True), environment),
                 Ok(vec![
-                    VmInstruction::Push(MemorySegment::Constant, 1),
-                    VmInstruction::Neg
+                    Push(Constant, 1),
+                    Neg
                 ])
             );
 
             assert_eq!(
                 generate_term(&Term::KeywordConstant(Keyword::False), environment),
-                Ok(vec![VmInstruction::Push(MemorySegment::Constant, 0)])
+                Ok(vec![Push(Constant, 0)])
             );
 
             assert!(generate_term(&Term::VarName("argh".to_owned()), environment).is_err());
@@ -531,9 +538,9 @@ mod test {
             let result = generate_expression(&expr, environment);
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), vec![
-                VmInstruction::Push(MemorySegment::Constant, 2),
-                VmInstruction::Push(MemorySegment::Constant, 3),
-                VmInstruction::Add,
+                Push(Constant, 2),
+                Push(Constant, 3),
+                Add,
             ]);
 
             let longer_expr = Expression(vec![
@@ -544,14 +551,13 @@ mod test {
                 ExpressionItem::Term(Term::IntegerConstant(4)),
             ]);
             let longer_expr_result = generate_expression(&longer_expr, environment);
-            assert!(longer_expr_result.is_ok());
-            assert_eq!(longer_expr_result.unwrap(), vec![
-                VmInstruction::Push(MemorySegment::Constant, 2),
-                VmInstruction::Push(MemorySegment::Constant, 3),
-                VmInstruction::Add,
-                VmInstruction::Push(MemorySegment::Constant, 4),
-                VmInstruction::Add,
-            ]);
+            assert_eq!(longer_expr_result, Ok(vec![
+                Push(Constant, 2),
+                Push(Constant, 3),
+                Add,
+                Push(Constant, 4),
+                Add,
+            ]));
         });
     }
 
@@ -573,14 +579,13 @@ mod test {
             ]);
 
             let result = generate_expression(&expr, environment);
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), vec![
-                VmInstruction::Push(MemorySegment::Constant, 2),
-                VmInstruction::Push(MemorySegment::Constant, 3),
-                VmInstruction::Push(MemorySegment::Constant, 4),
-                VmInstruction::Add,
-                VmInstruction::Call("Math.multiply".to_owned(), 2),
-            ]);
+            assert_eq!(result, Ok(vec![
+                Push(Constant, 2),
+                Push(Constant, 3),
+                Push(Constant, 4),
+                Add,
+                Call("Math.multiply".to_owned(), 2),
+            ]));
         });
     }
 
@@ -592,9 +597,9 @@ mod test {
                 subroutine_name: "someMethod".to_owned(),
                 parameters: vec![Expression(vec![ExpressionItem::Term(Term::IntegerConstant(1))])],
             }, environment), Ok(vec![
-                VmInstruction::Push(MemorySegment::Local, 0),
-                VmInstruction::Push(MemorySegment::Constant, 1),
-                VmInstruction::Call("SomeOtherClass.someMethod".to_owned(), 2)
+                Push(Local, 0),
+                Push(Constant, 1),
+                Call("SomeOtherClass.someMethod".to_owned(), 2)
             ]));
 
             assert_eq!(generate_subroutine_call(&SubroutineCall {
@@ -602,9 +607,42 @@ mod test {
                 subroutine_name: "someClassMethod".to_owned(),
                 parameters: vec![Expression(vec![ExpressionItem::Term(Term::IntegerConstant(1))])],
             }, environment), Ok(vec![
-                VmInstruction::Push(MemorySegment::Pointer, 0),
-                VmInstruction::Push(MemorySegment::Constant, 1),
-                VmInstruction::Call("MyClass.someClassMethod".to_owned(), 2)
+                Push(Pointer, 0),
+                Push(Constant, 1),
+                Call("MyClass.someClassMethod".to_owned(), 2)
+            ]));
+        });
+    }
+
+    #[test]
+    fn test_generate_let_statement() {
+        run_test_with_environment(0, |environment| {
+            let generated = generate_let_statement(
+                // let anArray[1] = anArray[1 + 1];
+                &LetStatement {
+                    index_expression: Some(Expression(vec![
+                        ExpressionItem::Term(Term::IntegerConstant(1))
+                    ])),
+                    name: "anArray".to_owned(),
+                    expression: Expression(vec![
+                        ExpressionItem::Term(Term::IntegerConstant(1)),
+                        ExpressionItem::Operation(BinaryOp::Plus),
+                        ExpressionItem::Term(Term::IntegerConstant(1))
+                    ])
+                },
+                environment
+            );
+            assert_eq!(generated, Ok(vec![
+                Push(Constant, 1),
+                Push(Local, 1),
+                Add,
+                Push(Constant, 1),
+                Push(Constant, 1),
+                Add,
+                Pop(Temp, 0),
+                Pop(Pointer, 1),
+                Push(Temp, 0),
+                Pop(That, 0)
             ]));
         });
     }
