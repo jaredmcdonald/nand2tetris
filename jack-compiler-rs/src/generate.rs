@@ -248,7 +248,8 @@ fn generate_subroutine_call(
             .get(&subroutine_call.subroutine_name)
             .ok_or(CodeGenError::UnknownSubroutineName)? == SubroutineType::Method;
         if is_method {
-            // TODO somehow `this` needs to be the first argument, how?
+            // TODO somehow `this` needs to be the first argument, how? is this (ha) right?
+            result.push(VmInstruction::Push(MemorySegment::This, 0));
             num_args += 1;
         }
         parent_name.push_str(&environment.current_classname);
@@ -258,10 +259,7 @@ fn generate_subroutine_call(
         result.extend(generate_expression(&param, environment)?)
     }
 
-    let name = format!("{}.{}",
-        parent_name,
-        subroutine_call.subroutine_name
-    );
+    let name = format!("{}.{}", parent_name, subroutine_call.subroutine_name);
 
     result.push(VmInstruction::Call(name, num_args));
 
@@ -367,6 +365,11 @@ mod test {
             names: vec!["blargh".to_owned()],
             data_type: Type::Int,
             var_type: VarType::Argument,
+        }).unwrap();
+        st2.insert(&Var {
+            names: vec!["someLocalVariable".to_owned()],
+            data_type: Type::Class("SomeOtherClass".to_owned()),
+            var_type: VarType::Local,
         }).unwrap();
         let symbol_table = LayeredSymbolTable::new(&st1, &st2);
         let mut class_subroutines = HashMap::new();
@@ -477,6 +480,31 @@ mod test {
                 VmInstruction::Add,
                 VmInstruction::Call("Math.multiply".to_owned(), 2),
             ]);
+        });
+    }
+
+    #[test]
+    fn test_generate_subroutine_call() {
+        run_test_with_environment(|environment| {
+            assert_eq!(generate_subroutine_call(&SubroutineCall {
+                parent_name: Some("someLocalVariable".to_owned()),
+                subroutine_name: "someMethod".to_owned(),
+                parameters: vec![Expression(vec![ExpressionItem::Term(Term::IntegerConstant(1))])],
+            }, environment), Ok(vec![
+                VmInstruction::Push(MemorySegment::Local, 0),
+                VmInstruction::Push(MemorySegment::Constant, 1),
+                VmInstruction::Call("SomeOtherClass.someMethod".to_owned(), 2)
+            ]));
+
+            assert_eq!(generate_subroutine_call(&SubroutineCall {
+                parent_name: None,
+                subroutine_name: "someClassMethod".to_owned(),
+                parameters: vec![Expression(vec![ExpressionItem::Term(Term::IntegerConstant(1))])],
+            }, environment), Ok(vec![
+                VmInstruction::Push(MemorySegment::This, 0),
+                VmInstruction::Push(MemorySegment::Constant, 1),
+                VmInstruction::Call("MyClass.someClassMethod".to_owned(), 2)
+            ]));
         });
     }
 }
