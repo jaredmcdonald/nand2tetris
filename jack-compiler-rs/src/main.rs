@@ -67,7 +67,7 @@ fn compile() -> Result<(), CliError> {
     let tokens = tokenize(&contents)?;
     let parsed = parse(&tokens)?;
     for line in generate(&parsed)? {
-        println!("{:?}", line);
+        println!("{}", line);
     }
     Ok(())
 }

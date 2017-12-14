@@ -1,4 +1,5 @@
 use rand::random;
+use std::fmt;
 use std::collections::HashMap;
 use tokenize::Keyword;
 use ast::*;
@@ -18,6 +19,7 @@ pub enum CodeGenError {
     UnknownVarName,
     UnknownSubroutineName,
     MethodCallOnPrimitive,
+    UnexpectedKeywordConstant,
 }
 
 impl From<SymbolError> for CodeGenError {
@@ -36,6 +38,22 @@ pub enum MemorySegment {
     That,
     Pointer,
     Temp,
+}
+
+impl fmt::Display for MemorySegment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::MemorySegment::*;
+        write!(f, "{}", match *self {
+            Constant => "constant",
+            Argument => "argument",
+            Local => "local",
+            Static => "static",
+            This => "this",
+            That => "that",
+            Pointer => "pointer",
+            Temp => "temp",
+        })
+    }
 }
 
 impl From<VarType> for MemorySegment {
@@ -98,6 +116,31 @@ pub enum VmInstruction {
     Neg,
 }
 
+impl fmt::Display for VmInstruction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::VmInstruction::*;
+        match *self {
+            Push(ref segment, index) => write!(f, "push {} {}", segment, index),
+            Pop(ref segment, index) => write!(f, "pop {} {}", segment, index),
+            Goto(ref label) => write!(f, "goto {}", label),
+            IfGoto(ref label) => write!(f, "if-goto {}", label),
+            Label(ref label) => write!(f, "label {}", label),
+            Function(ref name, local_count) => write!(f, "function {} {}", name, local_count),
+            Call(ref name, num_args) => write!(f, "call {} {}", name, num_args),
+            Return => write!(f, "return"),
+            Add => write!(f, "add"),
+            Sub => write!(f, "sub"),
+            And => write!(f, "and"),
+            Or => write!(f, "or"),
+            Lt => write!(f, "lt"),
+            Gt => write!(f, "gt"),
+            Eq => write!(f, "eq"),
+            Not => write!(f, "not"),
+            Neg => write!(f, "neg"),
+        }
+    }
+}
+
 fn generate_index_expression(
     identifier: &str,
     index_expr: &Expression,
@@ -112,6 +155,19 @@ fn generate_index_expression(
     Ok(result)
 }
 
+fn generate_string_constant(string: &str) -> Vec<VmInstruction> {
+    let len = string.len();
+    let mut result = vec![
+        VmInstruction::Push(MemorySegment::Constant, len),
+        VmInstruction::Call("String.new".to_owned(), 1),
+    ];
+    for byte in string.as_bytes() {
+        result.push(VmInstruction::Push(MemorySegment::Constant, *byte as usize));
+        result.push(VmInstruction::Call("String.appendChar".to_owned(), 2));
+    }
+    result
+}
+
 fn generate_term(
     term: &Term,
     environment: &SubroutineEnvironment
@@ -124,8 +180,9 @@ fn generate_term(
         },
         Term::KeywordConstant(k) => Ok(match k {
             Keyword::True => vec![VmInstruction::Push(MemorySegment::Constant, 1), VmInstruction::Neg],
-            // TODO `this`
-            _ => vec![VmInstruction::Push(MemorySegment::Constant, 0)] // null, false
+            Keyword::This => vec![VmInstruction::Push(MemorySegment::Pointer, 0)],
+            Keyword::Null|Keyword::False => vec![VmInstruction::Push(MemorySegment::Constant, 0)],
+            _ => return Err(CodeGenError::UnexpectedKeywordConstant),
         }),
         Term::Unary(op, ref term) => {
             // postfix: -3 -> 3 neg
@@ -140,7 +197,7 @@ fn generate_term(
             result.push(VmInstruction::Push(MemorySegment::That, 0));   // dereference & push
             Ok(result)
         },
-        Term::StringConstant(_) => Ok(vec![]), // TODO
+        Term::StringConstant(ref s) => Ok(generate_string_constant(s)),
     }
 }
 
@@ -331,6 +388,7 @@ fn generate_statements(
 fn generate_subroutine(
     subroutine: &Subroutine,
     classname: &str,
+    field_count: usize,
     class_symbol_table: &SymbolTable,
     class_subroutines: &HashMap<String, SubroutineType>
 ) -> CodeGenResult {
@@ -343,10 +401,17 @@ fn generate_subroutine(
         class_subroutines,
         current_classname: classname.to_owned(),
     };
-    // todo: insert function declaration, return void logic
     let local_count = subroutine.body.var_declarations.iter().fold(0, |sum, val| sum + val.names.len());
     let function_name = format!("{}.{}", classname, &subroutine.name);
     let mut result = vec![VmInstruction::Function(function_name, local_count)];
+
+    // allocate space for fields in constructor
+    if subroutine.subroutine_type == SubroutineType::Constructor {
+        result.push(VmInstruction::Push(MemorySegment::Constant, field_count));
+        result.push(VmInstruction::Call("Memory.alloc".to_owned(), 1));
+        result.push(VmInstruction::Pop(MemorySegment::Pointer, 0));
+    }
+
     result.extend(generate_statements(&subroutine.body.statements, &environment)?);
     Ok(result)
 }
@@ -365,17 +430,21 @@ pub fn generate(class: &Class) -> CodeGenResult {
     let (class_vars, subroutines): (Vec<_>, Vec<_>) = class.body.iter().partition(|i| {
         if let ClassBodyItem::ClassVar(_) = **i { true } else { false }
     });
+    let mut field_count = 0;
     // TODO can i just partition into iterators instead of the intermediate vecs?
     let mut class_vars_iter = class_vars.iter();
     while let Some(&&ClassBodyItem::ClassVar(ref var)) = class_vars_iter.next() {
         class_symbol_table.insert(&var)?;
+        if var.var_type == VarType::Field {
+            field_count += 1;
+        }
     }
 
     let mut generated = vec![];
     let class_subroutines = get_subroutine_map(subroutines.as_slice());
     let mut subroutines_iter = subroutines.iter();
     while let Some(&&ClassBodyItem::Subroutine(ref subroutine)) = subroutines_iter.next() {
-        generated.extend(generate_subroutine(subroutine, &class.name, &class_symbol_table, &class_subroutines)?)
+        generated.extend(generate_subroutine(subroutine, &class.name, field_count, &class_symbol_table, &class_subroutines)?)
     }
     Ok(generated)
 }
