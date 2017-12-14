@@ -141,20 +141,6 @@ impl fmt::Display for VmInstruction {
     }
 }
 
-fn generate_index_expression(
-    identifier: &str,
-    index_expr: &Expression,
-    environment: &SubroutineEnvironment,
-) -> CodeGenResult {
-    let (target, index, _) = environment.symbol_table.get(identifier).ok_or(CodeGenError::UnknownVarName)?;
-    let mut result = vec![VmInstruction::Push(MemorySegment::from(target), index)];
-    result.extend(generate_expression(index_expr, environment)?);
-    result.push(VmInstruction::Add);
-    // `pointer 1` now contains the address of `identifier[index_expr]`, value accessed via `this 0`
-    result.push(VmInstruction::Pop(MemorySegment::Pointer, 1)); // get the right address
-    Ok(result)
-}
-
 fn generate_string_constant(string: &str) -> Vec<VmInstruction> {
     let len = string.len();
     let mut result = vec![
@@ -193,7 +179,12 @@ fn generate_term(
         Term::SubroutineCall(ref s) => generate_subroutine_call(s, environment),
         Term::Parenthetical(ref e) => generate_expression(e, environment),
         Term::IndexExpr(ref identifier, ref index_expr) => {
-            let mut result = generate_index_expression(identifier, index_expr, environment)?;
+            let mut result = generate_expression(index_expr, environment)?;
+            let (target, index, _) = environment.symbol_table.get(identifier).ok_or(CodeGenError::UnknownVarName)?;
+            result.push(VmInstruction::Push(MemorySegment::from(target), index));
+            result.push(VmInstruction::Add);
+            // `pointer 1` now contains the address of `identifier[index_expr]`, value accessed via `this 0`
+            result.push(VmInstruction::Pop(MemorySegment::Pointer, 1)); // get the right address
             result.push(VmInstruction::Push(MemorySegment::That, 0));   // dereference & push
             Ok(result)
         },
@@ -230,14 +221,20 @@ fn generate_let_statement(
     statement: &LetStatement,
     environment: &SubroutineEnvironment
 ) -> CodeGenResult {
+    let (target, index, _) = environment.symbol_table.get(&statement.name).ok_or(CodeGenError::UnknownVarName)?;
     let rhs_expression = generate_expression(&statement.expression, environment)?;
     if let Some(ref index_expr) = statement.index_expression {
-        let mut result = generate_index_expression(&statement.name, index_expr, environment)?;
+        let mut result = generate_expression(index_expr, environment)?;
+        result.push(VmInstruction::Push(MemorySegment::from(target), index));
+        result.push(VmInstruction::Add);
         result.extend(rhs_expression);
-        result.push(VmInstruction::Pop(MemorySegment::That, 0));
+        result.push(VmInstruction::Pop(MemorySegment::Temp, 0)); // save the right-hand value on `temp 0`
+        // `pointer 1` now contains the address of `identifier[index_expr]`, value accessed via `this 0`
+        result.push(VmInstruction::Pop(MemorySegment::Pointer, 1)); // get the right address
+        result.push(VmInstruction::Push(MemorySegment::Temp, 0)); // rhs expression value
+        result.push(VmInstruction::Pop(MemorySegment::That, 0));  // target value is the next thing on the stack, pop to it
         Ok(result)
     } else {
-        let (target, index, _) = environment.symbol_table.get(&statement.name).ok_or(CodeGenError::UnknownVarName)?;
         let mut result = vec![];
         result.extend(rhs_expression);
         result.push(VmInstruction::Pop(MemorySegment::from(target), index));
@@ -442,7 +439,7 @@ pub fn generate(class: &Class) -> CodeGenResult {
     while let Some(&&ClassBodyItem::ClassVar(ref var)) = class_vars_iter.next() {
         class_symbol_table.insert(&var)?;
         if var.var_type == VarType::Field {
-            field_count += 1;
+            field_count += var.names.len();
         }
     }
 
