@@ -512,10 +512,7 @@ mod test {
 
             assert_eq!(
                 generate_term(&Term::KeywordConstant(Keyword::True), environment),
-                Ok(vec![
-                    Push(Constant, 1),
-                    Neg
-                ])
+                Ok(vec![Push(Constant, 1), Neg])
             );
 
             assert_eq!(
@@ -536,12 +533,11 @@ mod test {
                 ExpressionItem::Term(Term::IntegerConstant(3)),
             ]);
             let result = generate_expression(&expr, environment);
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), vec![
+            assert_eq!(result, Ok(vec![
                 Push(Constant, 2),
                 Push(Constant, 3),
                 Add,
-            ]);
+            ]));
 
             let longer_expr = Expression(vec![
                 ExpressionItem::Term(Term::IntegerConstant(2)),
@@ -645,5 +641,46 @@ mod test {
                 Pop(That, 0)
             ]));
         });
+    }
+
+    #[test]
+    fn test_generate_outer() {
+        // class Whatever {
+        //   field int argh, blargh;
+        //   constructor Whatever new() {
+        //     return this;
+        //   }
+        // }
+        let input = Class {
+            name: "Whatever".to_owned(),
+            body: vec![
+                ClassBodyItem::ClassVar(Var {
+                    names: vec!["argh".to_owned(), "blargh".to_owned()],
+                    data_type: Type::Int,
+                    var_type: VarType::Field,
+                }),
+                ClassBodyItem::Subroutine(Subroutine {
+                    name: "new".to_owned(),
+                    params: vec![],
+                    return_type: Type::Class("Whatever".to_owned()),
+                    subroutine_type: SubroutineType::Constructor,
+                    body: SubroutineBody {
+                        var_declarations: vec![],
+                        statements: vec![Statement::Return(
+                            Expression(vec![ExpressionItem::Term(Term::KeywordConstant(Keyword::This))])
+                        )],
+                    },
+                })
+            ]
+        };
+
+        assert_eq!(generate(&input), Ok(vec![
+            Function("Whatever.new".to_owned(), 0),
+            Push(Constant, 2),
+            Call("Memory.alloc".to_owned(), 1),
+            Pop(Pointer, 0),
+            Push(Pointer, 0),
+            Return,
+        ]));
     }
 }
