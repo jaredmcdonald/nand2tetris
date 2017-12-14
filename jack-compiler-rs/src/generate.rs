@@ -97,6 +97,20 @@ pub enum VmInstruction {
     Neg,
 }
 
+fn generate_index_expression(
+    identifier: &str,
+    index_expr: &Expression,
+    environment: &SubroutineEnvironment,
+) -> CodeGenResult {
+    let (target, index, _) = environment.symbol_table.get(identifier).ok_or(CodeGenError::UnknownVarName)?;
+    let mut result = vec![VmInstruction::Push(MemorySegment::from(target), index)];
+    result.extend(generate_expression(index_expr, environment)?);
+    result.push(VmInstruction::Add);
+    // `pointer 1` now contains the address of `identifier[index_expr]`, value accessed via `this 0`
+    result.push(VmInstruction::Pop(MemorySegment::Pointer, 1)); // get the right address
+    Ok(result)
+}
+
 fn generate_term(
     term: &Term,
     environment: &SubroutineEnvironment
@@ -109,6 +123,7 @@ fn generate_term(
         },
         Term::KeywordConstant(k) => Ok(match k {
             Keyword::True => vec![VmInstruction::Push(MemorySegment::Constant, 1), VmInstruction::Neg],
+            // TODO `this`
             _ => vec![VmInstruction::Push(MemorySegment::Constant, 0)] // null, false
         }),
         Term::Unary(op, ref term) => {
@@ -117,13 +132,19 @@ fn generate_term(
             result.push(VmInstruction::from(op));
             Ok(result)
         },
+        Term::SubroutineCall(ref s) => generate_subroutine_call(s, environment),
         Term::Parenthetical(ref e) => generate_expression(e, environment),
-        _ => Ok(vec![])
+        Term::IndexExpr(ref identifier, ref index_expr) => {
+            let mut result = generate_index_expression(identifier, index_expr, environment)?;
+            result.push(VmInstruction::Push(MemorySegment::That, 0));   // dereference & push
+            Ok(result)
+        },
+        Term::StringConstant(_) => Ok(vec![]), // TODO
     }
 }
 
-// infix:   a + b + c + d
-// postfix: a b + c + d +
+// infix:   `a + b + c + d`
+// postfix: `a b + c + d +`
 fn generate_expression(
     expression: &Expression,
     environment: &SubroutineEnvironment
@@ -151,19 +172,14 @@ fn generate_let_statement(
     statement: &LetStatement,
     environment: &SubroutineEnvironment
 ) -> CodeGenResult {
-    let (target, index, _) = environment.symbol_table.get(&statement.name).ok_or(CodeGenError::UnknownVarName)?;
     let rhs_expression = generate_expression(&statement.expression, environment)?;
-
     if let Some(ref index_expr) = statement.index_expression {
-        let mut result = vec![VmInstruction::Push(MemorySegment::from(target), index)];
-        result.extend(generate_expression(index_expr, environment)?);
-        result.push(VmInstruction::Add);
-        // pointer 1 now contains the address of a[b]
-        result.push(VmInstruction::Pop(MemorySegment::Pointer, 1)); // TODO is the index always 1? see p.229
+        let mut result = generate_index_expression(&statement.name, index_expr, environment)?;
         result.extend(rhs_expression);
-        result.push(VmInstruction::Pop(MemorySegment::That, 0)); // TODO is the index always 0?
+        result.push(VmInstruction::Pop(MemorySegment::That, 0));
         Ok(result)
     } else {
+        let (target, index, _) = environment.symbol_table.get(&statement.name).ok_or(CodeGenError::UnknownVarName)?;
         let mut result = vec![];
         result.extend(rhs_expression);
         result.push(VmInstruction::Pop(MemorySegment::from(target), index));
